@@ -83,8 +83,8 @@ README_INSTRUCTION_TARGETS = (
     "tools/ci_local.py",
     "tools/layout_audit.py",
     "tools/face_walkthrough.py",
-    "src/agentdesk/feeder",
-    "src/agentdesk/server",
+    "src/nexuusbot/feeder",
+    "src/nexuusbot/server",
     "docs/readme/dashboard.png",
     "docs/readme/memory.png",
     "docs/readme/marketplace.png",
@@ -240,10 +240,10 @@ def test_the_keychain_sentence_claims_only_what_the_code_does(monkeypatch):
                    "legacy settings rows", "masked hints"):
         assert marker in bullet, f"the keychain sentence lost its {marker!r} claim"
 
-    from agentdesk.config import PREFIX, parse_env_file
-    from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain, SERVICE
-    from agentdesk.keys.store import SCHEMA
-    from agentdesk.llm import effective_llm_config
+    from nexuusbot.config import PREFIX, parse_env_file
+    from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain, SERVICE
+    from nexuusbot.keys.store import SCHEMA
+    from nexuusbot.llm import effective_llm_config
 
     # "where a usable keychain is available": the retained service, and a
     # usable backend stores and returns the secret.
@@ -268,7 +268,7 @@ def test_the_keychain_sentence_claims_only_what_the_code_does(monkeypatch):
     assert missing.fetch("connection-1") is None
 
     # the save route refuses rather than keep a connection with no secret
-    app_source = _text(ROOT / "src" / "agentdesk" / "server" / "app.py")
+    app_source = _text(ROOT / "src" / "nexuusbot" / "server" / "app.py")
     assert "not server.keychain.store(" in app_source
 
     # "plaintext configuration": the optional config.env file carries the

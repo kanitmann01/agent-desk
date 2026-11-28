@@ -19,11 +19,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.excel.core import WorkbookLocked
-from agentdesk.excel.watcher import Adapters, ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
-from agentdesk.plugins.config import ConfigError
-from agentdesk.server import app as server_app
+from nexuusbot.excel.core import WorkbookLocked
+from nexuusbot.excel.watcher import Adapters, ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
+from nexuusbot.plugins.config import ConfigError
+from nexuusbot.server import app as server_app
 from excel_fixtures import BASE_ROWS, base_workbook, make_xlsx
 
 CHANGED_ROWS = [
@@ -422,7 +422,7 @@ class TestPickerDialogVisibility:
 
 
 def test_pick_failure_is_never_silent_and_never_teaches_a_typed_path():
-    from agentdesk.server import pages
+    from nexuusbot.server import pages
 
     script = pages.APP_JS
     # A null path is its own honest amber note: try again, never type.

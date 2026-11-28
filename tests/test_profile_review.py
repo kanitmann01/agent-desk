@@ -24,14 +24,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.agentloop import STEPS
-from agentdesk.assistant import audit as audit_store
-from agentdesk.insight import digest
-from agentdesk.ledger.store import Ledger
-from agentdesk.memory import profile, profile_review
-from agentdesk.repetition.activity import ActivityLog
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore, TOGGLES
+from nexuusbot.agentloop import STEPS
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.insight import digest
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.memory import profile, profile_review
+from nexuusbot.repetition.activity import ActivityLog
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore, TOGGLES
 
 LINE = "Owns the Harborlight Freight and Kestrel Foods accounts."
 ALLOWED = {881, 902}

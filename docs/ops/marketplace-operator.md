@@ -149,8 +149,8 @@ There is no bundle command in `scripts/`. Produce one with the helper the server
 ```python
 import json
 from datetime import datetime, timedelta, timezone
-from agentdesk.marketplace import signed_policy
-from agentdesk.trust import generate_seed, public_key
+from nexuusbot.marketplace import signed_policy
+from nexuusbot.trust import generate_seed, public_key
 
 seed = generate_seed()  # 32 bytes; keep it offline
 bundle = signed_policy.sign_policy_bundle(
@@ -191,7 +191,7 @@ The export does not include the internal detail field, so changelogs, rejection 
 
 ## Offline behavior and the catalog
 
-The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json` (read if present; the app never writes one, so this input stays empty on a desk that has only used the shipped surfaces). Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (three plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
+The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json` (read if present; the app never writes one, so this input stays empty on a desk that has only used the shipped surfaces). Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/nexuusbot/marketplace/bundled-catalog.json` (three plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
 
 The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those three plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
 

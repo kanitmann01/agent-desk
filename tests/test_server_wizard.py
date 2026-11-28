@@ -20,8 +20,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.store import InboxStore
-from agentdesk.plugins.runtime import PluginRuntime
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.plugins.runtime import PluginRuntime
 
 CANONICAL = "Watch this workbook and show me the latest figure"
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
@@ -96,7 +96,7 @@ def answer_all(booted, session_id, headers):
 @pytest.fixture()
 def env(tmp_path):
     clock = FakeClock(NOW)
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     booted = server_harness.Booted(
         plugins=make_runtime(tmp_path),
@@ -167,7 +167,7 @@ def test_build_validates_through_the_gate_before_preview(env, auth, tmp_path):
     # The gate: the draft directory passes the shared validator as-is.
     import tempfile
 
-    from agentdesk.validator.core import validate_plugin
+    from nexuusbot.validator.core import validate_plugin
 
     with tempfile.TemporaryDirectory() as tmp:
         plugin_dir = Path(tmp) / "draft"
@@ -256,7 +256,7 @@ def test_form_answer_with_a_malformed_index_keeps_the_walk_open(tmp_path, monkey
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     clock = FakeClock(NOW)
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     booted = server_harness.Booted(
         plugins=make_runtime(tmp_path),
@@ -282,7 +282,7 @@ def test_the_no_code_form_flow_installs_through_the_default_runtime(tmp_path, mo
     """The flagship flow in production shape: no injected runtime, so
     create_server builds the default one; every step a plain form post."""
     monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     booted = server_harness.Booted(
         plugins=None,
@@ -418,7 +418,7 @@ def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
     page names why, and answer/approve still install."""
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
-    from agentdesk.wizard.core import DEFAULT_QUESTIONS, WizardStore
+    from nexuusbot.wizard.core import DEFAULT_QUESTIONS, WizardStore
 
     clock = FakeClock(NOW)
     booted = server_harness.Booted(
@@ -453,7 +453,7 @@ def test_the_full_no_js_walk_ends_on_an_approved_page(tmp_path, monkeypatch):
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     clock = FakeClock(NOW)
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     booted = server_harness.Booted(
         plugins=make_runtime(tmp_path),
@@ -508,7 +508,7 @@ def test_a_workbook_install_lands_in_setup_with_its_dashboard_card(tmp_path, mon
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     clock = FakeClock(NOW)
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     booted = server_harness.Booted(
         plugins=make_runtime(tmp_path),
@@ -578,7 +578,7 @@ def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monke
     implying endpoint-shaped questions that never arrive (#62 review)."""
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
-    from agentdesk.wizard.core import DEFAULT_QUESTIONS, WizardStore
+    from nexuusbot.wizard.core import DEFAULT_QUESTIONS, WizardStore
 
     clock = FakeClock(NOW)
     booted = server_harness.Booted(
@@ -602,14 +602,14 @@ def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monke
 
 
 def test_form_body_fields_maps_each_field_to_its_first_value():
-    from agentdesk.server.app import form_body_fields
+    from nexuusbot.server.app import form_body_fields
 
     fields = form_body_fields(b"question=0&answer=hourly&answer=daily&blank=")
     assert fields == {"question": "0", "answer": "hourly"}
 
 
 def test_form_body_fields_refuses_undecodable_bytes():
-    from agentdesk.server.app import form_body_fields
+    from nexuusbot.server.app import form_body_fields
 
     assert form_body_fields(b"\xff\xfe=x") is None
 
@@ -635,7 +635,7 @@ def test_repair_cap_is_capped_and_observable_then_escalates(env, auth, monkeypat
     """The repair budget still bounds a draft that will not validate. The
     composer is what makes it broken here, since a model can no longer
     choose the manifest at all."""
-    from agentdesk import wizard as wizard_pkg
+    from nexuusbot import wizard as wizard_pkg
 
     def always_broken_compose(self, **_kwargs):
         return ({"schemaVersion": 1, "id": "wizard-broken", "name": "Broken",

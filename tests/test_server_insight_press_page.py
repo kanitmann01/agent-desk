@@ -10,8 +10,8 @@ from __future__ import annotations
 import re
 from urllib.parse import urlencode
 
-from agentdesk.insight import press
-from agentdesk.server import app
+from nexuusbot.insight import press
+from nexuusbot.server import app
 
 
 def _card(**extra) -> dict:
@@ -198,9 +198,9 @@ def _mail_desk(tmp_path):
     import sqlite3
     import time
 
-    from agentdesk.inbox.store import InboxStore
-    from agentdesk.mail.store import MailStore
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.inbox.store import InboxStore
+    from nexuusbot.mail.store import MailStore
+    from nexuusbot.settings import SettingsStore
     from tests.server_harness import Booted
 
     folder = tmp_path / "mail"
@@ -261,7 +261,7 @@ def test_a_pressed_card_can_stage_its_draft_as_one_card(tmp_path):
 
 
 def _press_rows(booted) -> list:
-    from agentdesk.assistant import audit as audit_store
+    from nexuusbot.assistant import audit as audit_store
     return [e for e in audit_store.entries(booted.server.audit_conn)
             if e["action"] == "insight.press"]
 

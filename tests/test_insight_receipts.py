@@ -28,11 +28,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentdesk.insight import reading as insight_reading
-from agentdesk.insight import service
-from agentdesk.insight.context import build_context
-from agentdesk.insight.preferences import FIELDS, defaults
-from agentdesk.insight.types import InsightContext, InsightReading
+from nexuusbot.insight import reading as insight_reading
+from nexuusbot.insight import service
+from nexuusbot.insight.context import build_context
+from nexuusbot.insight.preferences import FIELDS, defaults
+from nexuusbot.insight.types import InsightContext, InsightReading
 
 NOW = 1_760_000_000.0
 

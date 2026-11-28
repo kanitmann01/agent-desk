@@ -67,7 +67,7 @@ def test_the_windows_version_fields_say_nexuus_bot():
     assert "--windows-file-description=Nexuus Bot local application" in command
     # The names a machine matches do not move.
     assert "--output-filename=AgentDesk.exe" in command
-    assert "--include-package=agentdesk" in command
+    assert "--include-package=nexuusbot" in command
 
 
 def test_the_bundle_manifest_product_says_nexuus_bot(tmp_path):
@@ -97,7 +97,7 @@ def test_the_display_families_carry_no_temporary_entries():
     entry in server-pages covers retained command spellings, not display
     copy, and ticket 08 (issue 362) resolves it with the package move.
     The two stale entries in frontend-setup stay because the README one
-    carries whole-file coverage that is load-bearing: three src/agentdesk
+    carries whole-file coverage that is load-bearing: three src/nexuusbot
     package-path references in frontend/README.md belong to the
     python-package family (ticket 08), whose module-path entry lists
     README.md but omits frontend/README.md. The structural question is

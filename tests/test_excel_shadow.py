@@ -16,7 +16,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.excel.shadow import copy_to_shadow
+from nexuusbot.excel.shadow import copy_to_shadow
 
 
 def test_the_shadow_copy_drops_the_read_only_attribute(tmp_path):

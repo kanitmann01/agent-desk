@@ -20,7 +20,7 @@ NOW = "2026-11-11T16:00:00"
 def boot(tmp_path):
     """A booted server with a plugin runtime and a session, like the API suite's."""
     import server_harness
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",

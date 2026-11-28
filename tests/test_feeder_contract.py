@@ -1,7 +1,7 @@
 """The feeder contract: one small collector protocol over the existing
 Message record.
 
-The return type is agentdesk.mail.core.Message, so the no-body
+The return type is nexuusbot.mail.core.Message, so the no-body
 invariant is inherited instead of restated: a collector cannot hand the
 feeder a body field because the record has none.
 """
@@ -14,13 +14,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder.contract import (
+from nexuusbot.feeder.contract import (
     MANUAL_CAUSE,
     MANUAL_COLLECTOR_NAME,
     MailCollector,
     UnavailableCollector,
 )
-from agentdesk.mail.core import Message, parse_eml
+from nexuusbot.mail.core import Message, parse_eml
 
 
 class FakeCollector:

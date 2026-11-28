@@ -90,7 +90,7 @@ def main() -> int:
                         help="remove an existing venv and clone first")
     args = parser.parse_args()
 
-    from agentdesk.engine import cli_path, home_for, venv_path, write_marker
+    from nexuusbot.engine import cli_path, home_for, venv_path, write_marker
 
     home = home_for(args.data_dir)
     venv = venv_path(home)

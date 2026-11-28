@@ -16,8 +16,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.calendar.store import save_breakdown
-from agentdesk.inbox.store import InboxStore
+from nexuusbot.calendar.store import save_breakdown
+from nexuusbot.inbox.store import InboxStore
 
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 MEETING = NOW + timedelta(hours=1)
@@ -59,7 +59,7 @@ def make_env(meeting_doc: dict | None = calendar_doc()):
             return None
         return "onedrive/calendar_sync.json", json.dumps(meeting_doc).encode("utf-8")
 
-    from agentdesk.calendar.watcher import Adapters, CalendarBridge
+    from nexuusbot.calendar.watcher import Adapters, CalendarBridge
 
     bridge = CalendarBridge(
         cal_conn,
@@ -68,7 +68,7 @@ def make_env(meeting_doc: dict | None = calendar_doc()):
     )
     bridge.poll()
     inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
-    from agentdesk.repetition.activity import ActivityLog
+    from nexuusbot.repetition.activity import ActivityLog
 
     activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
     return clock, bridge, inbox, activity
@@ -81,7 +81,7 @@ def test_brief_appears_for_a_meeting_with_related_open_work():
         "subtasks": ["Pull the regional numbers Marco asked for"],
         "followups": [{"text": "Send the updated deck to Marco", "deadline": "13:00"}],
     })
-    from agentdesk.briefs import generate_briefs
+    from nexuusbot.briefs import generate_briefs
 
     created = generate_briefs(bridge, inbox, activity, clock)
     assert created == 1
@@ -99,7 +99,7 @@ def test_brief_appears_for_a_meeting_with_related_open_work():
 def test_brief_cites_research_history_about_the_attendees():
     clock, bridge, inbox, activity = make_env()
     activity.record("research", "What is Meridian's pricing position?")
-    from agentdesk.briefs import generate_briefs
+    from nexuusbot.briefs import generate_briefs
 
     generate_briefs(bridge, inbox, activity, clock)
     cards = [c for c in inbox.waiting() if c.kind == "brief"]
@@ -108,7 +108,7 @@ def test_brief_cites_research_history_about_the_attendees():
 
 def test_meeting_with_nothing_to_say_produces_no_card():
     clock, bridge, inbox, activity = make_env()  # no breakdowns, no research
-    from agentdesk.briefs import generate_briefs
+    from nexuusbot.briefs import generate_briefs
 
     assert generate_briefs(bridge, inbox, activity, clock) == 0
     assert [c for c in inbox.waiting() if c.kind == "brief"] == []
@@ -120,8 +120,8 @@ def test_brief_respects_the_interruption_budget():
         "subtasks": ["Pull the regional numbers Marco asked for"],
         "followups": [],
     })
-    from agentdesk.briefs import generate_briefs
-    from agentdesk.inbox.service import evaluate
+    from nexuusbot.briefs import generate_briefs
+    from nexuusbot.inbox.service import evaluate
 
     generate_briefs(bridge, inbox, activity, clock)
     evening = NOW.replace(hour=20)
@@ -140,7 +140,7 @@ def test_accepting_a_brief_prevents_the_twin():
         "subtasks": ["Pull the regional numbers Marco asked for"],
         "followups": [],
     })
-    from agentdesk.briefs import generate_briefs
+    from nexuusbot.briefs import generate_briefs
 
     assert generate_briefs(bridge, inbox, activity, clock) == 1
     card = next(c for c in inbox.waiting() if c.kind == "brief")
@@ -154,7 +154,7 @@ def test_no_code_path_reads_mail():
     # activity log and a clock: there is no mail-shaped parameter to abuse.
     import inspect
 
-    from agentdesk import briefs
+    from nexuusbot import briefs
 
     params = inspect.signature(briefs.generate_briefs).parameters
     assert set(params) == {"bridge", "inbox", "activity", "clock", "lead_hours"}
@@ -165,8 +165,8 @@ def test_briefs_flow_through_the_running_server(tmp_path):
     calendar_file = tmp_path / "calendar_sync.json"
     calendar_file.write_text(json.dumps(calendar_doc()), encoding="utf-8")
 
-    from agentdesk.calendar.watcher import Adapters, CalendarBridge
-    from agentdesk.repetition.activity import ActivityLog
+    from nexuusbot.calendar.watcher import Adapters, CalendarBridge
+    from nexuusbot.repetition.activity import ActivityLog
 
     def read_calendar():
         return str(calendar_file), calendar_file.read_bytes()

@@ -14,7 +14,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 from probe_fakes import gate
 
-from agentdesk.probe.core import (
+from nexuusbot.probe.core import (
     EXIT_GO,
     EXIT_NO_GO,
     EXIT_RESHAPE,
@@ -30,7 +30,7 @@ from agentdesk.probe.core import (
     VERDICT_NO_GO,
     VERDICT_RESHAPE,
 )
-from agentdesk.probe.verdict import aggregate_verdict, verdict_line
+from nexuusbot.probe.verdict import aggregate_verdict, verdict_line
 
 
 def base_gates(**overrides):

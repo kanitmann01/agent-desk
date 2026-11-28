@@ -25,7 +25,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import (
+from nexuusbot.llm import (
     LlmUnavailable,
     auth_headers,
     chat,
@@ -367,7 +367,7 @@ def test_settings_chat_and_chat_client_default_to_the_ten_second_cap():
     introspection-free presentation calls rely on."""
     import inspect
 
-    from agentdesk.llm import REQUEST_TIMEOUT_S, env_chat
+    from nexuusbot.llm import REQUEST_TIMEOUT_S, env_chat
 
     settings = RecordingSettings({})
     for client in (settings_chat(settings),

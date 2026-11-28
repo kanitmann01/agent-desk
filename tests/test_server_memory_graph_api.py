@@ -22,11 +22,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.core import KIND_MEMORY_DRAFT
-from agentdesk.memory.crypto import load_key
-from agentdesk.memory.store import MemoryStore
-from agentdesk.server import demo_data
-from agentdesk.server.memory_graph_api import build_memory_graph
+from nexuusbot.inbox.core import KIND_MEMORY_DRAFT
+from nexuusbot.memory.crypto import load_key
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.server import demo_data
+from nexuusbot.server.memory_graph_api import build_memory_graph
 
 
 @pytest.fixture()
@@ -197,7 +197,7 @@ def test_the_builder_reads_without_an_inbox(tmp_path):
 
 
 def test_the_graph_island_mounts_on_its_own_page_and_the_memory_page_links_it(booted, auth, monkeypatch):
-    from agentdesk.server import memory_api as app_module
+    from nexuusbot.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_graph_island_built", lambda: True)
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
     status, _h, body = booted.request("GET", "/memory/graph", auth)

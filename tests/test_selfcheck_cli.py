@@ -11,8 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server_harness
-from agentdesk import config
-from agentdesk.server import cli, selfcheck
+from nexuusbot import config
+from nexuusbot.server import cli, selfcheck
 
 
 def _no_personal_config(monkeypatch, tmp_path):
@@ -32,7 +32,7 @@ def test_selfcheck_cli_exit_codes(tmp_path, monkeypatch, capsys):
     # The self-check must build stores, not a server: binding a port here
     # would make a background update health check conflict with the app.
     monkeypatch.setattr(
-        "agentdesk.server.app.create_server",
+        "nexuusbot.server.app.create_server",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("self-check bound a server")),
     )
     assert cli.main(["--self-check", str(tmp_path / "desk-data")]) == 0

@@ -12,10 +12,10 @@ from types import SimpleNamespace
 
 import server_harness
 import test_deskcheck as base
-from agentdesk import deskcheck
-from agentdesk.deskcheck import fixes
-from agentdesk.ledger import Ledger
-from agentdesk.ledger import undo as ledger_undo
+from nexuusbot import deskcheck
+from nexuusbot.deskcheck import fixes
+from nexuusbot.ledger import Ledger
+from nexuusbot.ledger import undo as ledger_undo
 
 
 def _ctx(tmp_path, **kwargs):
@@ -154,7 +154,7 @@ def test_retired_plugins_is_one_ask_card(tmp_path):
 
 def _installed_runtime(tmp_path, plugin_id="retired-thing"):
     """A real runtime with one installed plugin that has its own data folder."""
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -202,9 +202,9 @@ def test_accepting_ask_card_uninstalls_keeps_data(tmp_path, monkeypatch):
 def test_the_desk_never_uninstalls_or_sends_without_the_card():
     """The fix machinery may only ask: no uninstall, purge or mail send there."""
     repo = Path(__file__).resolve().parents[1]
-    folders = [repo / "src/agentdesk/deskcheck"]
+    folders = [repo / "src/nexuusbot/deskcheck"]
     for extra in ("agentloop", "recommend"):
-        folder = repo / "src" / "agentdesk" / extra
+        folder = repo / "src" / "nexuusbot" / extra
         if folder.is_dir():
             folders.append(folder)
     forbidden = ("uninstall(", "purge_data(", "send_mail(")

@@ -14,10 +14,10 @@ from pathlib import Path
 import pytest
 
 import server_harness
-from agentdesk import deskcheck
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.deskcheck import (
+from nexuusbot import deskcheck
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.deskcheck import (
     REGISTRY,
     CheckResult,
     DeskContext,
@@ -25,11 +25,11 @@ from agentdesk.deskcheck import (
     run_checks,
     summary,
 )
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.inbox.store import InboxStore
-from agentdesk.plugins.runtime import PluginRuntime
-from agentdesk.settings import SettingsStore
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.plugins.runtime import PluginRuntime
+from nexuusbot.settings import SettingsStore
 
 NOW = 1700000000.0
 
@@ -305,7 +305,7 @@ def test_an_installed_but_uninstalled_plugin_is_not_retired(tmp_path):
 
 
 def test_an_empty_catalog_does_not_retire_every_plugin(tmp_path, monkeypatch):
-    import agentdesk.marketplace.catalog as catalog
+    import nexuusbot.marketplace.catalog as catalog
 
     monkeypatch.setattr(catalog, "load_catalog_file", lambda path, source: [])
     ctx = context(
@@ -318,7 +318,7 @@ def test_an_empty_catalog_does_not_retire_every_plugin(tmp_path, monkeypatch):
 
 
 def test_a_catalog_that_will_not_load_is_one_crashed_check(tmp_path, monkeypatch):
-    import agentdesk.marketplace.catalog as catalog
+    import nexuusbot.marketplace.catalog as catalog
 
     def unreadable(path, source):
         raise RuntimeError("catalog unreadable")
@@ -340,7 +340,7 @@ def test_a_catalog_that_will_not_load_is_one_crashed_check(tmp_path, monkeypatch
 
 
 def test_a_fresh_context_has_no_catalog_until_one_is_loaded(tmp_path, monkeypatch):
-    import agentdesk.marketplace.catalog as catalog
+    import nexuusbot.marketplace.catalog as catalog
 
     monkeypatch.setattr(catalog, "load_catalog_file", lambda path, source: [])
     ctx = DeskContext(
@@ -497,7 +497,7 @@ def test_settings_page_offers_fix_for_an_automatic_finding(booted, auth):
     assert ">Fix it</button>" in section
 
 def test_settings_page_stays_up_when_the_desk_check_cannot_run(booted, auth, monkeypatch):
-    import agentdesk.server.app as app
+    import nexuusbot.server.app as app
 
     def down(server):
         raise RuntimeError("desk check down")

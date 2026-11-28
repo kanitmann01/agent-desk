@@ -27,17 +27,17 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from agentdesk.agentloop import schedule
-from agentdesk.agentloop.loop import (
+from nexuusbot.agentloop import schedule
+from nexuusbot.agentloop.loop import (
     AgentLoop,
     LoopContext,
     Step,
     ordered_steps,
 )
-from agentdesk.assistant import audit as audit_store
-from agentdesk.inbox.store import InboxStore
-from agentdesk.ledger.store import Ledger
-from agentdesk.settings import SettingsStore
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.settings import SettingsStore
 
 NOW = 1700000000.0
 
@@ -107,7 +107,7 @@ def _expected_full_pass_steps(settings) -> list[str]:
     failed one, exactly as _run_steps records it, so it counts as expected
     too.
     """
-    import agentdesk.server.app  # noqa: F401 - registers the ticket steps
+    import nexuusbot.server.app  # noqa: F401 - registers the ticket steps
 
     names = []
     for step in ordered_steps():

@@ -56,7 +56,7 @@ export default defineConfig({
     ),
   },
   build: {
-    outDir: '../src/agentdesk/server/static/spa',
+    outDir: '../src/nexuusbot/server/static/spa',
     emptyOutDir: true,
     sourcemap: false,
     // The CSP allows fonts from 'self' only, so no font may travel as a

@@ -13,7 +13,7 @@ from .registry_fixtures import make_registry, tree_digest
 
 
 def digest_of(repo):
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     index = load_index((repo / "index.json").read_text(encoding="utf-8"))
     return index.plugins[0].releases[0].sha256
 
@@ -21,7 +21,7 @@ def digest_of(repo):
 def test_install_pinned_by_recorded_hash(tmp_path):
     repo = make_registry(tmp_path)
     sha = digest_of(repo)
-    from agentdesk.registry.install import install_from_registry
+    from nexuusbot.registry.install import install_from_registry
     out = install_from_registry(repo, "sales-delta-widget", version="1.2.0",
                                 sha256=sha, destination=tmp_path / "plugins")
     assert out["ok"] is True
@@ -32,7 +32,7 @@ def test_install_pinned_by_recorded_hash(tmp_path):
 
 def test_install_refuses_on_hash_mismatch(tmp_path):
     repo = make_registry(tmp_path)
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
         install_from_registry(repo, "sales-delta-widget", version="1.2.0",
                               sha256="0" * 64, destination=tmp_path / "plugins")
@@ -46,7 +46,7 @@ def test_install_refuses_tampered_index(tmp_path):
     document = json.loads(index_path.read_text(encoding="utf-8"))
     document["plugins"][0]["releases"][0]["sha256"] = "1" * 64
     index_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
         install_from_registry(repo, "sales-delta-widget", version="1.2.0",
                               destination=tmp_path / "plugins")
@@ -55,7 +55,7 @@ def test_install_refuses_tampered_index(tmp_path):
 
 def test_install_refuses_unknown_plugin_and_version(tmp_path):
     repo = make_registry(tmp_path)
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
         install_from_registry(repo, "ghost-plugin", version="1.0.0",
                               destination=tmp_path / "plugins")
@@ -80,7 +80,7 @@ def _add_release(repo, new_version, new_tag, yanked=False):
 
 
 def test_old_lockfile_pin_resolves_after_index_moves(tmp_path):
-    from agentdesk.registry.install import install_from_registry
+    from nexuusbot.registry.install import install_from_registry
     repo = make_registry(tmp_path)
     old_sha = digest_of(repo)
     _add_release(repo, "1.3.0", "sales-delta-widget-1.3.0")
@@ -90,7 +90,7 @@ def test_old_lockfile_pin_resolves_after_index_moves(tmp_path):
 
 
 def test_yanked_release_resolves_only_with_exact_pin(tmp_path):
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     repo = make_registry(tmp_path)
     old_sha = digest_of(repo)
     _add_release(repo, "1.3.0", "sales-delta-widget-1.3.0")
@@ -111,7 +111,7 @@ def test_yanked_release_resolves_only_with_exact_pin(tmp_path):
 
 def test_local_release_resolves_versioned_then_flat_tree(tmp_path):
     """A checkout with one local release can install it from plugins/<id>."""
-    from agentdesk.registry.install import local_release_source
+    from nexuusbot.registry.install import local_release_source
 
     flat = tmp_path / "plugins" / "local-only"
     flat.mkdir(parents=True)
@@ -139,7 +139,7 @@ def test_cli_install_happy_and_refusal(tmp_path):
         + os.pathsep + env.get("PYTHONPATH", "")
 
     r = subprocess.run(
-        [sys.executable, "-m", "agentdesk.registry", "install",
+        [sys.executable, "-m", "nexuusbot.registry", "install",
          "--registry", str(repo), "--plugin", "sales-delta-widget",
          "--version", "1.2.0", "--sha256", sha,
          "--dest", str(tmp_path / "plugins")],
@@ -148,7 +148,7 @@ def test_cli_install_happy_and_refusal(tmp_path):
     assert r.stdout.startswith("OK sales-delta-widget@1.2.0")
 
     r = subprocess.run(
-        [sys.executable, "-m", "agentdesk.registry", "install",
+        [sys.executable, "-m", "nexuusbot.registry", "install",
          "--registry", str(repo), "--plugin", "sales-delta-widget",
          "--version", "1.2.0", "--sha256", "0" * 64,
          "--dest", str(tmp_path / "plugins2")],

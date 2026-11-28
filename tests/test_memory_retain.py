@@ -23,9 +23,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.extract import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.extract import (
     EXTRACTION_SYSTEM_PROMPT,
     ExtractionFailed,
     ExtractorUnavailable,
@@ -80,7 +80,7 @@ MEMO = CandidateFact(text="I drafted the memo", kind="experience")
 def _file_memory(tmp_path):
     path = tmp_path / "memory.sqlite3"
     conn = sqlite3.connect(str(path), check_same_thread=False)
-    from agentdesk.memory.store import MemoryStore
+    from nexuusbot.memory.store import MemoryStore
 
     return MemoryStore(conn, time.time), path
 
@@ -411,7 +411,7 @@ def test_the_posted_excerpt_stays_bounded(boot, auth):
     long_question = "word " * 200  # ~1000 characters per turn
     for _ in range(6):
         boot.post_json("/assistant/ask", {"question": long_question}, auth)
-    from agentdesk.server.research import RETAIN_EXCERPT_MAX_CHARS
+    from nexuusbot.server.research import RETAIN_EXCERPT_MAX_CHARS
 
     status, _h, body = boot.request("GET", "/assistant", auth)
     page = body.decode("utf-8")

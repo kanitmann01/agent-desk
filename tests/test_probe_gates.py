@@ -26,9 +26,9 @@ from probe_fakes import (
     SequenceRunner,
 )
 
-from agentdesk.memory.embed import EmbedderUnavailable
-from agentdesk.probe.core import FAIL, GATE_EMBEDDINGS, PASS, UNKNOWN, RunResult
-from agentdesk.probe.gates import (
+from nexuusbot.memory.embed import EmbedderUnavailable
+from nexuusbot.probe.core import FAIL, GATE_EMBEDDINGS, PASS, UNKNOWN, RunResult
+from nexuusbot.probe.gates import (
     PROBE_EMBED_TEXT,
     gate_edr_identity,
     gate_embeddings,
@@ -97,7 +97,7 @@ class TestGateExecUserSpace:
     def test_real_subprocess_hello_world(self, tmp_path):
         # Integration: the real adapter bundle must write a user-space script
         # and execute it, classifying PASS on any machine where Python runs.
-        from agentdesk.probe.adapters import subprocess_runner, write_text
+        from nexuusbot.probe.adapters import subprocess_runner, write_text
 
         result = gate_exec_user_space(subprocess_runner, tmp_path, write_text)
         assert result.status == PASS

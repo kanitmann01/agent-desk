@@ -20,9 +20,9 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import pytest
 
-from agentdesk.ledger import ASK_FIRST, Entry, Ledger, LedgerError, may_act
-from agentdesk.ledger.undo import undo
-from agentdesk.settings import SettingsStore
+from nexuusbot.ledger import ASK_FIRST, Entry, Ledger, LedgerError, may_act
+from nexuusbot.ledger.undo import undo
+from nexuusbot.settings import SettingsStore
 
 
 class Clock:

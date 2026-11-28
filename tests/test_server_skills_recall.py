@@ -22,8 +22,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.memory.crypto import load_key
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.memory.crypto import load_key
+from nexuusbot.memory.store import MemoryStore
 
 
 KEY = load_key(bytes(range(32)))

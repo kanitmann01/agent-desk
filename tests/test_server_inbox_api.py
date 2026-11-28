@@ -20,10 +20,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.budget import decide_budget
-from agentdesk.inbox.core import UnknownCard
-from agentdesk.inbox.service import evaluate
-from agentdesk.inbox.store import InboxStore
+from nexuusbot.inbox.budget import decide_budget
+from nexuusbot.inbox.core import UnknownCard
+from nexuusbot.inbox.service import evaluate
+from nexuusbot.inbox.store import InboxStore
 
 MORNING = datetime(2026, 11, 11, 9, 0, 0).astimezone()      # outside quiet hours
 EVENING = datetime(2026, 11, 11, 20, 0, 0).astimezone()     # inside quiet hours

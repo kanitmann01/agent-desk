@@ -19,7 +19,7 @@ if str(_src) not in sys.path:
 # never by a copy of it: a copied walk that drifted (as the pathlib
 # object sort once did on Windows) would pin digests the installer
 # refuses, red only on the machines that disagree with the copy.
-from agentdesk.registry.install import tree_digest  # noqa: E402,F401
+from nexuusbot.registry.install import tree_digest  # noqa: E402,F401
 
 FIXTURES = Path(__file__).resolve().parent
 PLUGIN_FIXTURE = FIXTURES / "fixtures" / "registry" / "plugins" / "sales-delta-widget"

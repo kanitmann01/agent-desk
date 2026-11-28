@@ -21,9 +21,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.core import UnknownFact
-from agentdesk.memory.hybrid import TIME_PRIOR
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.memory.core import UnknownFact
+from nexuusbot.memory.hybrid import TIME_PRIOR
+from nexuusbot.memory.store import MemoryStore
 
 
 class FakeClock:
@@ -741,7 +741,7 @@ def test_merge_entities_refuses_merging_an_entity_with_itself():
 def test_merge_entities_refuses_unknown_ids():
     store = _store()
     entity_id = _seed_entity(store.conn, "Acme")
-    from agentdesk.memory.core import UnknownEntity
+    from nexuusbot.memory.core import UnknownEntity
 
     with pytest.raises(UnknownEntity):
         store.merge_entities(entity_id, 999)
@@ -752,7 +752,7 @@ def test_merge_entities_refuses_unknown_ids():
 
 
 def test_merge_entities_deletes_both_sides_observations():
-    from agentdesk.memory.loop import entity_scope
+    from nexuusbot.memory.loop import entity_scope
 
     store = _store()
     acme_a = store.add("Acme signed the renewal.")

@@ -26,9 +26,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys.resolve import JOBS, JOB_LABELS, NO_AI_KEY
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.llm import chat_client
+from nexuusbot.keys.resolve import JOBS, JOB_LABELS, NO_AI_KEY
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.llm import chat_client
 
 KEY_A = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
 KEY_B = "sk-live-quietly-bbbbbbbbbbbbbbbb-4444"
@@ -50,7 +50,7 @@ SOURCES_REPLY = json.dumps({"sources": [
 def _instant_check(base_url, api_key, extra_headers=None, timeout=None):
     """A save-time prober that answers instantly, hermetically: this
     suite routes live traffic, it does not exercise the save check."""
-    from agentdesk.keys import health
+    from nexuusbot.keys import health
     return health.ProbeResult(health.OUTCOME_OK, "", ["hermetic-model"])
 
 

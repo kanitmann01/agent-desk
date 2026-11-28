@@ -12,7 +12,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.server.guard import allowed_hosts, allowed_origins, check_request
+from nexuusbot.server.guard import allowed_hosts, allowed_origins, check_request
 
 PORT = 8765
 

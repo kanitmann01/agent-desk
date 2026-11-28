@@ -14,9 +14,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.inbox.core import KIND_SUGGESTION
-from agentdesk.inbox.store import InboxStore
-from agentdesk.server.inbox_view import card_html
+from nexuusbot.inbox.core import KIND_SUGGESTION
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.server.inbox_view import card_html
 
 NOW = 1763650000.0
 

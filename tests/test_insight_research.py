@@ -25,9 +25,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.insight import preferences, research, service
-from agentdesk.insight import press as press_module
-from agentdesk.insight.types import InsightContext
+from nexuusbot.insight import preferences, research, service
+from nexuusbot.insight import press as press_module
+from nexuusbot.insight.types import InsightContext
 
 NOW = 1_765_000_000.0
 

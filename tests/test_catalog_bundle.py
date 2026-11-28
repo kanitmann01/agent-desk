@@ -9,12 +9,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agentdesk.marketplace.catalog import (
+from nexuusbot.marketplace.catalog import (
     build_bundled_catalog,
     bundled_catalog_path,
 )
-from agentdesk.registry.index import load_index
-from agentdesk.registry.install import tree_digest
+from nexuusbot.registry.index import load_index
+from nexuusbot.registry.install import tree_digest
 
 REPO = Path(__file__).resolve().parent.parent
 REGISTRY = REPO / "registry"
@@ -173,7 +173,7 @@ def test_the_archive_is_outside_every_shipped_surface():
 
 
 def test_the_packaged_build_never_reaches_the_archive():
-    """The packaged inputs are the agentdesk package and its static assets.
+    """The packaged inputs are the nexuusbot package and its static assets.
 
     The build command names neither the archive folder nor anything under it;
     the only plugin list it can carry is the committed bundle, whose ids the

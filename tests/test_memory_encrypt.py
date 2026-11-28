@@ -25,9 +25,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory import store as memory_store_module
-from agentdesk.memory.crypto import CryptoBox, MemoryEncryptedError, load_key
-from agentdesk.memory.store import (
+from nexuusbot.memory import store as memory_store_module
+from nexuusbot.memory.crypto import CryptoBox, MemoryEncryptedError, load_key
+from nexuusbot.memory.store import (
     MemoryStore,
     ensure_key_file,
     key_file_path,

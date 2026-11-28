@@ -54,7 +54,7 @@ def _workbook_zip(tmp_path: Path, elements: list) -> Path:
 @pytest.fixture()
 def boot(tmp_path):
     import server_harness
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",
@@ -90,7 +90,7 @@ def test_a_chosen_face_is_served_instead_of_the_classic_tracker(boot, tmp_path):
 def test_the_runtime_reads_the_chosen_face_from_the_manifest(tmp_path):
     """The manifest the runtime hands a card carries the parsed elements, which
     is how the card learns what was asked for without a second file read."""
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",
@@ -113,8 +113,8 @@ def test_the_flagship_tracker_keeps_its_chart(tmp_path):
     it look like a chosen face by its elements alone. Guessing from shapes
     would take its column/area chart away, so the marker is the install
     source, not the schema."""
-    from agentdesk.plugins.cards import _rendered_face
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.cards import _rendered_face
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",
@@ -138,7 +138,7 @@ def test_the_flagship_tracker_keeps_its_chart(tmp_path):
 def test_a_classic_face_keeps_the_tracker_card(tmp_path):
     """An element list that is the classic value/change/workbook face renders
     the classic card, so a tile built before the question is unchanged."""
-    from agentdesk.plugins.cards import _rendered_face
+    from nexuusbot.plugins.cards import _rendered_face
 
     classic = [
         {"type": "metric", "binding": "value"},
@@ -152,7 +152,7 @@ def test_a_classic_face_keeps_the_tracker_card(tmp_path):
 
 
 def test_a_chosen_face_renders_its_element_from_the_reading(tmp_path):
-    from agentdesk.plugins.cards import _rendered_face
+    from nexuusbot.plugins.cards import _rendered_face
 
     reading = {"value": 10, "delta": "+2", "direction": "up",
                "points": [1, 2, 3], "file": "sales.xlsx",
@@ -168,7 +168,7 @@ def test_a_chosen_face_renders_its_element_from_the_reading(tmp_path):
 
 
 def test_a_progress_face_uses_the_reading_s_target(tmp_path):
-    from agentdesk.plugins.cards import _rendered_face
+    from nexuusbot.plugins.cards import _rendered_face
 
     reading = {"value": 10, "delta": "+2", "direction": "up", "points": [],
                "file": "sales.xlsx", "table": {"rows": []},
@@ -190,7 +190,7 @@ def test_a_wizard_built_tile_applies_the_chosen_face(tmp_path):
     won, so a wizard-built tile fell back to the classic tracker. One
     definition survives: the one that attaches both the elements and the
     marker, and a wizard-built install proves both ride on its manifest."""
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",

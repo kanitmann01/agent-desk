@@ -22,7 +22,7 @@ NOW = "2026-11-11T16:00:00"
 
 @pytest.fixture()
 def runtime(tmp_path):
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
     return PluginRuntime(
         plugins_dir=tmp_path / "plugins",
         data_dir=tmp_path / "data",
@@ -62,7 +62,7 @@ def test_install_refuses_invalid_manifest_before_anything_executes(runtime, tmp_
     bad = shell_zip(tmp_path / "shell.zip")
     plugins_before = sorted(p.name for p in runtime.plugins_dir.iterdir()) \
         if runtime.plugins_dir.exists() else []
-    from agentdesk.plugins.runtime import PluginError
+    from nexuusbot.plugins.runtime import PluginError
     with pytest.raises(PluginError) as excinfo:
         runtime.install(bad, source="zip")
     assert excinfo.value.code == "install:validator-failed"
@@ -96,7 +96,7 @@ def test_uninstall_keeps_data_and_purge_needs_named_confirmation(runtime, tmp_pa
     assert data_dir.is_dir()
     assert runtime.record("sales-delta-widget")["state"] == "uninstalled"
 
-    from agentdesk.plugins.runtime import PluginError
+    from nexuusbot.plugins.runtime import PluginError
     with pytest.raises(PluginError) as excinfo:
         runtime.purge_data("sales-delta-widget", confirmation=None)
     assert excinfo.value.code == "purge:confirmation-required"
@@ -142,7 +142,7 @@ def test_install_over_installed_holds_widening_and_keeps_history_and_pilot(
     the version history is appended instead of replaced (rollback still
     answers), and the pilot counter does not restart.
     """
-    from agentdesk.plugins.runtime import PILOT_VIEWS
+    from nexuusbot.plugins.runtime import PILOT_VIEWS
     runtime.install(zip_file(tmp_path / "v1.zip"), source="zip")
     runtime.record_dashboard_view()
     runtime.record_dashboard_view()
@@ -208,7 +208,7 @@ def test_extract_refuses_a_zip_member_over_the_size_cap(tmp_path):
     """A small bundle with one declared-huge member is refused before any
     decompression (audit F8): the cap reads the member's declared size,
     so a multi-gigabyte member cannot spike memory."""
-    from agentdesk.plugins.runtime import MAX_ZIP_MEMBER_BYTES, PluginError, extract_plugin_zip
+    from nexuusbot.plugins.runtime import MAX_ZIP_MEMBER_BYTES, PluginError, extract_plugin_zip
 
     source = tmp_path / "bomb.zip"
     with zipfile.ZipFile(source, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -226,7 +226,7 @@ def test_extract_refuses_a_zip_member_over_the_size_cap(tmp_path):
 def test_pilot_badge_covers_exactly_the_first_five_runs(runtime, tmp_path):
     """PRD R3.7 (the binding interaction document) pins the badge at five
     runs; the runtime constant must match it, not drift again."""
-    from agentdesk.plugins.runtime import PILOT_VIEWS
+    from nexuusbot.plugins.runtime import PILOT_VIEWS
     prd = (Path(__file__).resolve().parents[1] / "docs" / "PRD.md").read_text(
         encoding="utf-8")
     match = re.search(r'"pilot" badge for the first (\d+) runs', prd)
@@ -278,7 +278,7 @@ def test_amber_data_source_with_cause_and_retest(runtime, tmp_path):
     assert status["status"] == "fresh"
 
 def test_a_restarted_runtime_rebinds_enabled_plugins_on_the_dashboard(tmp_path):
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
     from excel_fixtures import make_xlsx
 
     dirs = dict(plugins_dir=tmp_path / "plugins", data_dir=tmp_path / "data",
@@ -299,7 +299,7 @@ def test_a_restarted_runtime_rebinds_enabled_plugins_on_the_dashboard(tmp_path):
 
 
 def test_widget_payload_detects_in_place_tampering(tmp_path):
-    from agentdesk.plugins.runtime import PluginError, PluginRuntime
+    from nexuusbot.plugins.runtime import PluginError, PluginRuntime
 
     runtime = PluginRuntime(
         plugins_dir=tmp_path / "plugins",
@@ -355,8 +355,8 @@ def test_a_widget_card_names_its_plugin_for_the_reading_seam(runtime, tmp_path):
 
 def _golden_runtime(case, tmp_path):
     """Build the installed-plugin state one golden-matrix row exercises."""
-    from agentdesk.plugins.config import InstanceStore
-    from agentdesk.plugins.runtime import PILOT_VIEWS, PluginRuntime
+    from nexuusbot.plugins.config import InstanceStore
+    from nexuusbot.plugins.runtime import PILOT_VIEWS, PluginRuntime
     from excel_fixtures import make_xlsx
     from plugin_fixtures import write_alias_plugin
 
@@ -482,7 +482,7 @@ def test_layout_keys_read_the_newest_manifest_and_cards_the_active_one(runtime, 
     # instance capability, the active one (0.1.0) keeps it.
     import shutil
 
-    from agentdesk.plugins.config import InstanceStore
+    from nexuusbot.plugins.config import InstanceStore
     from plugins_fixtures import ZIP_DATE
 
     registry = Path(__file__).resolve().parents[1] / "registry" / "plugins"

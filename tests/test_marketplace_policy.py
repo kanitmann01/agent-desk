@@ -11,7 +11,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.marketplace.policy import (
+from nexuusbot.marketplace.policy import (
     Policy,
     default_policy,
     evaluate,

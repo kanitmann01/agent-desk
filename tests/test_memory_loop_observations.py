@@ -13,10 +13,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.excel.core import Delta  # noqa: E402
-from agentdesk.inbox.store import InboxStore  # noqa: E402
-from agentdesk.memory import loop  # noqa: E402
-from agentdesk.memory.store import MemoryStore  # noqa: E402
+from nexuusbot.excel.core import Delta  # noqa: E402
+from nexuusbot.inbox.store import InboxStore  # noqa: E402
+from nexuusbot.memory import loop  # noqa: E402
+from nexuusbot.memory.store import MemoryStore  # noqa: E402
 
 
 class Clock:

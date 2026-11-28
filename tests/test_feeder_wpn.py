@@ -20,9 +20,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder.collectors.wpn import NO_HANDLER_CAUSE, WpnCollector
-from agentdesk.feeder.contract import MailCollector
-from agentdesk.feeder.runner import OutlookFeeder
+from nexuusbot.feeder.collectors.wpn import NO_HANDLER_CAUSE, WpnCollector
+from nexuusbot.feeder.contract import MailCollector
+from nexuusbot.feeder.runner import OutlookFeeder
 
 SENTINEL = "BODY-PREVIEW-SENTINEL-9f3c"
 NOW = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)

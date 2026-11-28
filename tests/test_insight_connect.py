@@ -15,12 +15,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server_harness
-from agentdesk.insight import insight_connect
-from agentdesk.insight import reading as insight_reading
-from agentdesk.insight import workbook
-from agentdesk.insight.context import build_context
-from agentdesk.insight.types import InsightContext
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.insight import insight_connect
+from nexuusbot.insight import reading as insight_reading
+from nexuusbot.insight import workbook
+from nexuusbot.insight.context import build_context
+from nexuusbot.insight.types import InsightContext
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -207,7 +207,7 @@ def test_no_match_leaves_the_reading_exactly_as_it_was():
 
 def _instant_check(base_url, api_key, extra_headers=None, timeout=None):
     """A save-time prober that answers instantly and hermetically."""
-    from agentdesk.keys import health
+    from nexuusbot.keys import health
     return health.ProbeResult(health.OUTCOME_OK, "", ["hermetic-model"])
 
 
@@ -235,8 +235,8 @@ def test_the_sample_desk_holds_nameable_things(tmp_path, monkeypatch):
     payload carries the line, naming an entity the desk holds; the
     sample desk's concept is still refused."""
     import time as time_module
-    from agentdesk.plugins.runtime import PluginRuntime
-    from agentdesk.server import demo_data
+    from nexuusbot.plugins.runtime import PluginRuntime
+    from nexuusbot.server import demo_data
 
     data_dir = tmp_path / "desk-data"
     monkeypatch.setenv("AGENTDESK_DATA", str(data_dir))
@@ -292,7 +292,7 @@ def test_a_fresh_desk_holds_no_names():
     booted = _desk()
     try:
         auth = booted.exchange()
-        from agentdesk.insight.context import build_context
+        from nexuusbot.insight.context import build_context
         import time as time_module
         context = build_context(booted.server, {}, now=time_module.time())
         assert context.desk_names == ()

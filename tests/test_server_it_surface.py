@@ -21,8 +21,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.excel.watcher import Adapters, ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
+from nexuusbot.excel.watcher import Adapters, ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
 from excel_fixtures import base_workbook
 
 
@@ -139,8 +139,8 @@ def test_the_touches_table_lists_every_action_the_app_can_record():
     # records but the vocabulary misses under-describes the machine to
     # the one reviewer who reads this page (spec 017 workstream 3): the
     # rows the audit found missing, the press included, must all render.
-    from agentdesk.assistant import audit as audit_store
-    from agentdesk.server import touches
+    from nexuusbot.assistant import audit as audit_store
+    from nexuusbot.server import touches
     page = touches.render_touches(
         {"insight.press"}, "test", datetime(2026, 11, 21, 9, 0)
     )
@@ -194,8 +194,8 @@ def test_audit_csv_requires_a_session(env):
 
 
 def test_data_dir_statement_matches_the_real_resolution(monkeypatch, tmp_path):
-    from agentdesk.server import touches
-    from agentdesk.server.app import default_data_dir
+    from nexuusbot.server import touches
+    from nexuusbot.server.app import default_data_dir
 
     monkeypatch.delenv("AGENTDESK_DATA", raising=False)
     assert touches.data_dir_statement() == str(Path.home() / ".agent-desk")

@@ -23,7 +23,7 @@ contracts in `docs/ops/compatibility.md`.
 
 The SDK boundary is a specification and documentation grant, not a separate
 binary or Python package. No `sdk/` directory exists today. The plugin
-validator in `src/agentdesk/validator/` implements the schema and remains
+validator in `src/nexuusbot/validator/` implements the schema and remains
 proprietary; plugin authors do not need that source to author or distribute
 a compatible declarative plugin.
 
@@ -41,7 +41,7 @@ MIT notices.
 
 Hermes Agent (github.com/NousResearch/hermes-agent, commit `f6c3eb1`,
 Copyright (c) 2025 Nous Research) is MIT-licensed. Portions adapted in
-`src/agentdesk/{ledger,deskcheck,agentloop,recommend,safety,update}`,
+`src/nexuusbot/{ledger,deskcheck,agentloop,recommend,safety,update}`,
 `memory/profile*.py` and `repetition/curator.py`. The upstream licence text
 is vendored verbatim at `licenses/third-party/hermes-agent-LICENSE.txt`
 (sha256 `821556e6...5ab6`), and every adapted file's module docstring names
@@ -160,9 +160,9 @@ these components.
 
 ## Known gaps and required follow-ups
 
-1. `src/agentdesk/server/touches.py:64` still renders `License: MIT` on the
+1. `src/nexuusbot/server/touches.py:64` still renders `License: MIT` on the
    user-facing "What this app touches" page. The packaging agent was not
-   allowed to edit `src/agentdesk`; the core owner must change it to point at
+   allowed to edit `src/nexuusbot`; the core owner must change it to point at
    `LICENSE` and `LICENSE-SDK`. Until then the UI contradicts this document.
 2. The build is unsigned in this environment. There is no Authenticode
    certificate, so the AppLocker publisher string is a documented placeholder,

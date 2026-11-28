@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agentdesk.registry.ci import review_registry_changes  # noqa: E402
+from nexuusbot.registry.ci import review_registry_changes  # noqa: E402
 
 
 def _archived_ids(archive_root: Path | None) -> frozenset[str]:

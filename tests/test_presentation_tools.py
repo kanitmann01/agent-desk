@@ -17,7 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.presentations.tools import (
+from nexuusbot.presentations.tools import (
     ToolError,
     build_deck,
     inspect_file,
@@ -175,6 +175,6 @@ def test_build_deck_refuses_an_unknown_variant(tmp_path):
 
 
 def _packs():
-    from agentdesk.presentations.packs import load_packs
+    from nexuusbot.presentations.packs import load_packs
 
     return load_packs()

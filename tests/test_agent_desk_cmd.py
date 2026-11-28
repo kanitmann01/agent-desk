@@ -25,7 +25,7 @@ def test_agent_desk_cmd_exists():
 
 def test_agent_desk_cmd_starts_the_server_module():
     text = cmd_text()
-    assert "python -m agentdesk.server" in text
+    assert "python -m nexuusbot.server" in text
 
 
 def test_agent_desk_cmd_points_pythonpath_at_the_source_tree():
@@ -76,7 +76,7 @@ def test_agent_desk_cmd_has_a_python_fallback():
 
 def test_agent_desk_cmd_reaches_uv_as_the_last_rung():
     text = cmd_text()
-    assert "uv run --no-project python -m agentdesk.server" in text
+    assert "uv run --no-project python -m nexuusbot.server" in text
 
 
 def test_agent_desk_cmd_forces_the_windows_trust_store_for_uv():

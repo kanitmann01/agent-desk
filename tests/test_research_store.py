@@ -15,7 +15,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.assistant.research_store import ResearchStore  # noqa: E402
+from nexuusbot.assistant.research_store import ResearchStore  # noqa: E402
 
 
 def _store(clock=None):

@@ -16,19 +16,19 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.calendar.store import (
+from nexuusbot.calendar.store import (
     clear_calendar_path,
     get_calendar_path,
     set_calendar_path,
 )
-from agentdesk.calendar.watcher import (
+from nexuusbot.calendar.watcher import (
     Adapters,
     CalendarBridge,
     default_calendar_candidates,
     default_read_calendar,
 )
 import server_harness
-from agentdesk.server.app import default_calendar_hint
+from nexuusbot.server.app import default_calendar_hint
 
 
 def fake_home(monkeypatch, tmp_path) -> Path:

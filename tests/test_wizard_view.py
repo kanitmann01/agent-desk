@@ -14,7 +14,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.server.wizard_view import (  # noqa: E402
+from nexuusbot.server.wizard_view import (  # noqa: E402
     approval_summary,
     preview_lines,
     render_wizard_page,

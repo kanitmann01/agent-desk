@@ -4,7 +4,7 @@ These tests drive the boundary's public surface only (spec 023, ticket
 023-3): the side-car is exercised through an injected spawn, so no test
 ever starts the real side-car, and the fixed-loop fallback through the
 smallest stand-in for the supervised loop. The boundary scan is the
-other half of the contract: nothing outside src/agentdesk/engine may
+other half of the contract: nothing outside src/nexuusbot/engine may
 import a backend by name, and this file holds itself to the same rule,
 which is why even the command grammar is pinned through run_turn. The
 two process tests are the exception the rule is meant to allow: the
@@ -28,8 +28,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import agentdesk.engine as engine_pkg
-from agentdesk.engine import (
+import nexuusbot.engine as engine_pkg
+from nexuusbot.engine import (
     ARG_MAX_CHARS,
     ConnectionSpec,
     EngineUnavailable,
@@ -39,14 +39,14 @@ from agentdesk.engine import (
     prompt_for,
     run_turn,
 )
-from agentdesk.ledger.store import Ledger
+from nexuusbot.ledger.store import Ledger
 
 # The backend modules only the engine package may name.
 BACKENDS = ("sidecar", "fallback")
 # The live trees the scan walks: the product, its tools and scripts, and
 # the tests that hold the rule.
 SCAN_ROOTS = (
-    ROOT / "src" / "agentdesk",
+    ROOT / "src" / "nexuusbot",
     ROOT / "tools",
     ROOT / "scripts",
     ROOT / "tests",
@@ -144,13 +144,13 @@ def _backend_import_hits(path: Path, tree: ast.AST) -> list[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 parts = alias.name.split(".")
-                if parts[:2] == ["agentdesk", "engine"] and len(parts) > 2 \
+                if parts[:2] == ["nexuusbot", "engine"] and len(parts) > 2 \
                         and parts[2] in BACKENDS:
                     hits.append(f"{path}: import {alias.name}")
         elif isinstance(node, ast.ImportFrom):
             names = [alias.name for alias in node.names]
             parts = (node.module or "").split(".")
-            if parts[:2] == ["agentdesk", "engine"] and (
+            if parts[:2] == ["nexuusbot", "engine"] and (
                     (len(parts) > 2 and parts[2] in BACKENDS)
                     or any(name in BACKENDS for name in names)):
                 hits.append(f"{path}: from {node.module} import {', '.join(names)}")
@@ -162,18 +162,18 @@ def _backend_import_hits(path: Path, tree: ast.AST) -> list[str]:
 
 
 def test_nothing_outside_the_engine_package_imports_a_backend():
-    """A backend import anywhere outside src/agentdesk/engine fails the scan."""
+    """A backend import anywhere outside src/nexuusbot/engine fails the scan."""
     hits: list[str] = []
     for root in SCAN_ROOTS:
         for path in sorted(root.rglob("*.py")):
             relative = path.relative_to(ROOT)
-            if relative.parts[:3] == ("src", "agentdesk", "engine"):
+            if relative.parts[:3] == ("src", "nexuusbot", "engine"):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             hits.extend(_backend_import_hits(relative, tree))
     assert hits == [], (
         "the engine's backends are importable only inside "
-        "src/agentdesk/engine; found: " + "; ".join(hits))
+        "src/nexuusbot/engine; found: " + "; ".join(hits))
 
 
 def test_the_sidecar_command_grammar_is_pinned():
@@ -449,8 +449,8 @@ def test_unreadable_lines_stay_visible_in_the_stream():
 
 def test_availability_is_the_pinned_cli_file_inside_the_home():
     """Availability reads the home given, not the machine, and is False without it."""
-    assert run_turn.__module__ == "agentdesk.engine"
-    from agentdesk.engine import available
+    assert run_turn.__module__ == "nexuusbot.engine"
+    from nexuusbot.engine import available
 
     assert available(_installed_home())
     assert not available(Path(tempfile.mkdtemp(prefix="agentdesk-empty-")))

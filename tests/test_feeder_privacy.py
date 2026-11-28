@@ -19,7 +19,7 @@ for _p in (str(SRC), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-FEEDER = SRC / "agentdesk" / "feeder"
+FEEDER = SRC / "nexuusbot" / "feeder"
 
 # Direct imports only: a module that reaches a banned package through a
 # third party is not this scan's business.
@@ -29,7 +29,7 @@ BANNED = (
     "subprocess",
     "urllib",
     "requests",
-    "agentdesk.llm",
+    "nexuusbot.llm",
 )
 
 ALLOWED_LOCAL = (

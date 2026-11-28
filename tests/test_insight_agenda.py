@@ -17,8 +17,8 @@ its own beyond the wording, so its reading is pinned here too.
 
 import pytest
 
-from agentdesk.insight import agenda, calendar
-from agentdesk.insight.types import InsightContext
+from nexuusbot.insight import agenda, calendar
+from nexuusbot.insight.types import InsightContext
 
 NOW = 1_760_000_000.0
 

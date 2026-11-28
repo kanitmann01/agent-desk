@@ -19,12 +19,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox import service as inbox_service
-from agentdesk.inbox.core import KIND_MAIL_DIGEST, KIND_MAIL_FOLLOW_UP
-from agentdesk.inbox.store import InboxStore
-from agentdesk.mail.core import read_eml_folder_reported
-from agentdesk.mail.store import MailStore
-from agentdesk.mail.watcher import (
+from nexuusbot.inbox import service as inbox_service
+from nexuusbot.inbox.core import KIND_MAIL_DIGEST, KIND_MAIL_FOLLOW_UP
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.mail.core import read_eml_folder_reported
+from nexuusbot.mail.store import MailStore
+from nexuusbot.mail.watcher import (
     STATE_ERROR,
     STATE_UNCONFIGURED,
     STATE_WATCHING,
@@ -436,13 +436,13 @@ def test_no_feeder_runs_without_a_folder_and_status_says_so(tmp_path):
 def test_the_feeder_path_imports_no_network_or_model_client():
     """The structural half of the privacy promise: the watcher and the
     feeder core cannot reach a socket or the model client."""
-    import agentdesk.feeder.runner as runner
-    import agentdesk.mail.watcher as watcher
+    import nexuusbot.feeder.runner as runner
+    import nexuusbot.mail.watcher as watcher
 
     for module in (runner, watcher):
         source = Path(module.__file__).read_text(encoding="utf-8")
         for banned in ("import socket", "import urllib", "import requests",
-                       "http.client", "agentdesk.llm"):
+                       "http.client", "nexuusbot.llm"):
             assert banned not in source, (module.__name__, banned)
 
 
@@ -471,7 +471,7 @@ def test_a_seeded_fetch_status_survives_a_restart(tmp_path):
 
 
 def test_a_corrupt_feeder_status_file_is_ignored(monkeypatch, tmp_path):
-    from agentdesk.server.app import _read_feeder_status
+    from nexuusbot.server.app import _read_feeder_status
 
     monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     assert _read_feeder_status() is None  # no file yet

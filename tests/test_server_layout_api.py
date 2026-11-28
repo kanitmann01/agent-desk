@@ -29,7 +29,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.plugins.runtime import PluginRuntime
+from nexuusbot.plugins.runtime import PluginRuntime
 from plugins_fixtures import valid_zip
 
 BUILTINS = ["sales", "commitments", "research", "skills"]

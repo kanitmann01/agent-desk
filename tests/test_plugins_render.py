@@ -16,7 +16,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.plugins.render import (  # noqa: E402
+from nexuusbot.plugins.render import (  # noqa: E402
     ELEMENT_KINDS,
     PluginRenderError,
     render_elements,

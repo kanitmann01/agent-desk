@@ -1,4 +1,4 @@
-"""The reading's lines are resolved once, in agentdesk.insight.reading.
+"""The reading's lines are resolved once, in nexuusbot.insight.reading.
 
 The card payload carries the resolved blocks, and both surfaces print the
 text as it came: the no-JS card draws the block paragraphs, and the SPA
@@ -17,12 +17,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentdesk.insight import reading as presentation
-from agentdesk.insight import service
-from agentdesk.insight.preferences import FIELDS, defaults
-from agentdesk.insight.press import KINDS as PRESS_KINDS, press_to_fields
-from agentdesk.insight.types import InsightContext, InsightReading
-from agentdesk.server import app
+from nexuusbot.insight import reading as presentation
+from nexuusbot.insight import service
+from nexuusbot.insight.preferences import FIELDS, defaults
+from nexuusbot.insight.press import KINDS as PRESS_KINDS, press_to_fields
+from nexuusbot.insight.types import InsightContext, InsightReading
+from nexuusbot.server import app
 
 NOW = 1_760_000_000.0
 

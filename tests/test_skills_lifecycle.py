@@ -19,7 +19,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.repetition.skills import (
+from nexuusbot.repetition.skills import (
     PROMPT_MAX,
     SkillError,
     SkillStore,
@@ -263,8 +263,8 @@ def test_pin_and_feedback_routes(tmp_path):
 
 
 def test_feedback_queue_caps_at_five_items():
-    from agentdesk.server.app import enqueue_skill_feedback
-    from agentdesk.ledger.store import Ledger
+    from nexuusbot.server.app import enqueue_skill_feedback
+    from nexuusbot.ledger.store import Ledger
 
     ledger = Ledger(":memory:")
     for n in range(7):
@@ -322,7 +322,7 @@ def test_request_path_writes_race_loop_path_writes_consistently():
     unique, the settings store's own concurrency shape."""
     import threading
 
-    from agentdesk.repetition.activity import ActivityLog
+    from nexuusbot.repetition.activity import ActivityLog
 
     lock = threading.RLock()
     conn = sqlite3.connect(":memory:", check_same_thread=False)

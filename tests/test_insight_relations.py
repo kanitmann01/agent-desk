@@ -12,7 +12,7 @@ from datetime import date
 
 import pytest
 
-from agentdesk.insight import relations
+from nexuusbot.insight import relations
 
 
 def _table(headers, rows):

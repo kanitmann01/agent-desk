@@ -10,7 +10,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 from probe_fakes import gate
 
-from agentdesk.probe.core import (
+from nexuusbot.probe.core import (
     FAIL,
     GATE_EDR,
     GATE_EXEC,
@@ -21,8 +21,8 @@ from agentdesk.probe.core import (
     PASS,
     UNKNOWN,
 )
-from agentdesk.probe.report import render_report, render_summary
-from agentdesk.probe.verdict import aggregate_verdict, verdict_line
+from nexuusbot.probe.report import render_report, render_summary
+from nexuusbot.probe.verdict import aggregate_verdict, verdict_line
 
 CONTEXT = {
     "generated": "2026-01-01 12:00:00",

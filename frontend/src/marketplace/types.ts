@@ -1,4 +1,4 @@
-// The marketplace JSON DTOs, mirroring src/agentdesk/marketplace/catalog.py
+// The marketplace JSON DTOs, mirroring src/nexuusbot/marketplace/catalog.py
 // and api.py exactly. Field names keep the server's spelling.
 
 import type { PluginElement } from '../types';
@@ -135,7 +135,7 @@ export interface InstalledResponse {
 // -- per-instance setup (T5) ----------------------------------------------
 
 // The instance document the plugin runtime stores per configured instance
-// (agentdesk.plugins.config). The manage view reads it through
+// (nexuusbot.plugins.config). The manage view reads it through
 // GET /api/plugins/<id>/instances.
 export interface InstanceDocument {
   schemaVersion?: number;

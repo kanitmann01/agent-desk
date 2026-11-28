@@ -11,14 +11,14 @@ from datetime import datetime
 
 import pytest
 
-from agentdesk.plugins.execute import PluginWidgetRunner
-from agentdesk.plugins.sources import (
+from nexuusbot.plugins.execute import PluginWidgetRunner
+from nexuusbot.plugins.sources import (
     STATES,
     SourceContext,
     SourceResult,
     read_source,
 )
-from agentdesk.validator import validate_plugin
+from nexuusbot.validator import validate_plugin
 from test_validator_support import VALID_MANIFEST, write_plugin
 
 NOW = datetime(2026, 11, 15, 12, 0, 0)

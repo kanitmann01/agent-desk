@@ -25,7 +25,7 @@ const notices = readFileSync(resolve(repo, 'THIRD-PARTY-NOTICES.md'), 'utf8');
 const licenses = readdirSync(resolve(frontend, 'public', 'licenses'));
 
 // The committed bundle stylesheet, wherever the build put it.
-const spaAssets = resolve(repo, 'src', 'agentdesk', 'server', 'static', 'spa', 'assets');
+const spaAssets = resolve(repo, 'src', 'nexuusbot', 'server', 'static', 'spa', 'assets');
 const bundleCss = readdirSync(spaAssets)
   .filter((f) => f.endsWith('.css'))
   .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
@@ -247,7 +247,7 @@ function mediaBlock(text: string, query: string): string {
 // The server-rendered pages carry their own copy of the shell CSS; both
 // must agree, so the tests read it out of the Python source.
 const serverPages = readFileSync(
-  resolve(repo, 'src', 'agentdesk', 'server', 'pages.py'),
+  resolve(repo, 'src', 'nexuusbot', 'server', 'pages.py'),
   'utf8',
 );
 const serverStylesMatch = /STYLES = """(.*?)"""/s.exec(serverPages);
@@ -536,7 +536,7 @@ describe('text fields', () => {
     expect(css).toMatch(/textarea\{scrollbar-width:none\}/);
     expect(css).toMatch(/textarea::-webkit-scrollbar\{display:none\}/);
     expect(css).not.toMatch(/\.cmd-field\{[^}]*overflow(-y)?:hidden/);
-    const serverCss = readFileSync(resolve(repo, 'src/agentdesk/server/pages.py'), 'utf8');
+    const serverCss = readFileSync(resolve(repo, 'src/nexuusbot/server/pages.py'), 'utf8');
     expect(serverCss).toMatch(/textarea\{scrollbar-width:none\}/);
     expect(serverCss).toMatch(/textarea::-webkit-scrollbar\{display:none\}/);
   });

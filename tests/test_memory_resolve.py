@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.resolve import (
+from nexuusbot.memory.resolve import (
     EntityRef,
     Mention,
     StoredEntity,
@@ -107,7 +107,7 @@ class FakeRepo:
     def exact_ids(self, name: str) -> list[int] | None:
         if self.exact_index is None:
             return None
-        from agentdesk.memory.hybrid import normalize_name
+        from nexuusbot.memory.hybrid import normalize_name
         return self.exact_index.get(normalize_name(name), [])
 
     def entity(self, entity_id: int) -> StoredEntity:

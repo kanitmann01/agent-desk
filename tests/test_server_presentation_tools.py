@@ -19,7 +19,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
+from nexuusbot.assistant import audit as audit_store
 
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
@@ -113,7 +113,7 @@ def test_the_agents_page_names_the_deck_tools(env, auth):
     page = body.decode("utf-8")
     assert "Deck tools (for agents and scripts)" in page
     assert "presentation_create" in page
-    assert "agentdesk.presentations.cli" in page
+    assert "nexuusbot.presentations.cli" in page
 
 
 def test_create_writes_a_deck_and_the_url_downloads_it(env, auth):

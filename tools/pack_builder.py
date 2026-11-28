@@ -31,9 +31,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.presentations.ooxml import pack_zip, read_parts  # noqa: E402
-from agentdesk.presentations.packs import user_templates_dir  # noqa: E402
-from agentdesk.presentations.thumbs import variant_thumb  # noqa: E402
+from nexuusbot.presentations.ooxml import pack_zip, read_parts  # noqa: E402
+from nexuusbot.presentations.packs import user_templates_dir  # noqa: E402
+from nexuusbot.presentations.thumbs import variant_thumb  # noqa: E402
 
 _SLIDE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
 _DROP_PREFIXES = (

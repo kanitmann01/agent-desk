@@ -34,7 +34,7 @@ if [ "$1" = "dev" ]; then
     exit 1
   fi
   # API in the background: its one-time start link lands in the dev log.
-  $PY -m agentdesk.server --port 8765 --no-browser >>"$LOG" 2>&1 &
+  $PY -m nexuusbot.server --port 8765 --no-browser >>"$LOG" 2>&1 &
   echo $! > "$PID"
   echo "API running on port 8765. Log: $LOG"
   echo "Stop it later with: kill \$(cat $PID)"

@@ -120,7 +120,7 @@ npm test
 
 The full gate runs Python tests, frontend typecheck, Vitest, the license gate, registry CI, and naming guards.
 
-The Outlook alert feeder lives in `src/agentdesk/feeder/`: one platform-agnostic core over the existing header-only `Message` type, a Windows toast reader and a macOS Notification Center reader behind one collector protocol, an atomic `.eml` writer, and one status record. It runs inside the mail watcher only while the app is open and creates no OS task or service.
+The Outlook alert feeder lives in `src/nexuusbot/feeder/`: one platform-agnostic core over the existing header-only `Message` type, a Windows toast reader and a macOS Notification Center reader behind one collector protocol, an atomic `.eml` writer, and one status record. It runs inside the mail watcher only while the app is open and creates no OS task or service.
 
 The layout audit plans the `fresh`, `data`, `plugins`, `full`, `long-values`, `busy`, and `legacy-dashboard` conditions. The `busy` condition uses synthetic capability cache fixtures and injected UNKNOWN gate runners. It never retests machine capabilities, reaches an external probe endpoint, installs a package, lists processes, or writes a OneDrive probe.
 

@@ -152,8 +152,8 @@ skill's; this file holds the product and engine terms.
   stable on registration sequence, so import order carries no meaning.
 - **Serialized store**: a store whose connection-touching methods run
   under its one re-entrant lock. The rule's one owner is
-  `agentdesk.locking.serialized`; stores sharing a connection share the
-  lock handed over by their boot (`agentdesk.locking.store_lock`).
+  `nexuusbot.locking.serialized`; stores sharing a connection share the
+  lock handed over by their boot (`nexuusbot.locking.store_lock`).
 - **Store guard**: the one refusal for an optional collaborator that is
   not configured (`DashboardHandler._require_store`): a 503 naming the
   store, and a None for the handler to return on.

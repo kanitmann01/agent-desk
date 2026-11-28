@@ -23,7 +23,7 @@ retained identifier with its context, owner and review trigger.
   pyproject.
 - Nuitka: `python -m pip install nuitka`.
 - Node 22+ only if you need to rebuild the dashboard. The committed Vite
-  bundle in `src/agentdesk/server/static/spa/` is what ships; end users never
+  bundle in `src/nexuusbot/server/static/spa/` is what ships; end users never
   need Node.
 - A C compiler is not required on Windows: Nuitka can fetch its own MinGW64
   toolchain, but only when the build is invoked with
@@ -72,8 +72,8 @@ same either way.
   and endpoint protection to reason about, and leaves temporary copies of the
   executable.
 - `--enable-plugin=no-qt` keeps unused Qt support out.
-- `--include-package=agentdesk` compiles the application package.
-- `--include-data-dir=src/agentdesk/server/static=agentdesk/server/static`
+- `--include-package=nexuusbot` compiles the application package.
+- `--include-data-dir=src/nexuusbot/server/static=nexuusbot/server/static`
   embeds the committed dashboard build output.
 - `--nofollow-import-to=tests` and `pytest` keep test code out.
 - `--windows-console-mode=disable` produces a GUI-subsystem executable. It
@@ -308,9 +308,9 @@ version folder all remain on disk.
    shortcut. There is no MSIX, MSI, or auto-update service.
 4. **No AppLocker/WDAC rollout.** Policy design, pilot group, certificate
    procurement, and signing are out of scope for this ticket.
-5. **Touches page contradiction.** `src/agentdesk/server/touches.py:64` still
+5. **Touches page contradiction.** `src/nexuusbot/server/touches.py:64` still
    says the app is MIT. The core owner must update it; this packaging work
-   was not allowed to edit `src/agentdesk`. See `docs/licensing.md`.
+   was not allowed to edit `src/nexuusbot`. See `docs/licensing.md`.
 6. **Visual C++ runtime.** Nuitka standalone bundles Python and compiled
    modules, but validate on a clean Windows image that any required Visual C++
    runtime is present. This environment did not produce an artifact to test.

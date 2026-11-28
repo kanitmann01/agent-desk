@@ -22,9 +22,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.crypto import MemoryEncryptedError, make_marker
-from agentdesk.memory.embed import EmbedderUnavailable, cosine
-from agentdesk.memory.store import MemoryStore, ensure_schema
+from nexuusbot.memory.crypto import MemoryEncryptedError, make_marker
+from nexuusbot.memory.embed import EmbedderUnavailable, cosine
+from nexuusbot.memory.store import MemoryStore, ensure_schema
 
 
 class FakeClock:

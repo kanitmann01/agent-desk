@@ -17,12 +17,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentdesk.inbox.store import InboxStore
-from agentdesk.insight import press
-from agentdesk.insight.preferences import defaults
-from agentdesk.insight.types import InsightError
-from agentdesk.llm import LlmUnavailable
-from agentdesk.mail.core import parse_eml, with_threads
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.insight import press
+from nexuusbot.insight.preferences import defaults
+from nexuusbot.insight.types import InsightError
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.mail.core import parse_eml, with_threads
 
 
 def _prefs() -> dict:

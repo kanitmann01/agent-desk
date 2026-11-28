@@ -21,8 +21,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.core import Fact
-from agentdesk.memory.hybrid import (
+from nexuusbot.memory.core import Fact
+from nexuusbot.memory.hybrid import (
     RRF_K,
     TIME_PRIOR,
     EntityLink,
@@ -109,7 +109,7 @@ def test_meaningful_tokens_drop_stopwords_short_tokens_and_duplicates():
 
 
 def test_the_stopword_list_matches_the_donor():
-    from agentdesk.memory.hybrid import STOPWORDS
+    from nexuusbot.memory.hybrid import STOPWORDS
 
     assert len(STOPWORDS) == 61
     for word in (

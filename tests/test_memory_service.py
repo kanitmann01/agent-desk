@@ -13,8 +13,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.core import Fact
-from agentdesk.memory.service import (
+from nexuusbot.memory.core import Fact
+from nexuusbot.memory.service import (
     MAX_CHARS,
     MAX_FACTS,
     build_facts_block,

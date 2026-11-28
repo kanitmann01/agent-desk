@@ -168,7 +168,7 @@ class Desk:
         like a browser while direct stops at the first one. pick_workbook
         stands in for the native file dialog, which cannot open headless.
         """
-        from agentdesk.server import app as server_app
+        from nexuusbot.server import app as server_app
 
         os.environ["AGENTDESK_DATA"] = str(data_dir)
         self.name = name

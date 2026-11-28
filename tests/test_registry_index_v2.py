@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from agentdesk.registry.index import RegistryIndexError, load_index
+from nexuusbot.registry.index import RegistryIndexError, load_index
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64

@@ -1,7 +1,7 @@
 """Shared support for the validator tests.
 
 Importing this module first puts the src layout on sys.path so the tests
-can import ``agentdesk.validator`` without installing the package. It also
+can import ``nexuusbot.validator`` without installing the package. It also
 provides helpers that run the validator CLI in a subprocess.
 """
 
@@ -54,7 +54,7 @@ def write_plugin(dest: Path, manifest=None, files: dict | None = None) -> Path:
 
 
 def cli_env() -> dict:
-    """Environment for CLI subprocesses that can import agentdesk."""
+    """Environment for CLI subprocesses that can import nexuusbot."""
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
     parts = [part for part in existing.split(os.pathsep) if part]
@@ -65,9 +65,9 @@ def cli_env() -> dict:
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess:
-    """Run ``python -m agentdesk.validator`` with the given arguments."""
+    """Run ``python -m nexuusbot.validator`` with the given arguments."""
     return subprocess.run(
-        [sys.executable, "-m", "agentdesk.validator", *args],
+        [sys.executable, "-m", "nexuusbot.validator", *args],
         capture_output=True,
         text=True,
         env=cli_env(),

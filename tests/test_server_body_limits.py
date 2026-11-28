@@ -19,7 +19,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server.app import MAX_BODY_BYTES, MAX_DRAIN_BYTES, body_drain_plan
+from nexuusbot.server.app import MAX_BODY_BYTES, MAX_DRAIN_BYTES, body_drain_plan
 
 
 @pytest.fixture()

@@ -21,17 +21,17 @@ for _p in (str(ROOT / "src"), str(ROOT / "tools"), str(ROOT / "tests")):
 
 import server_harness
 import pytest
-from agentdesk.assistant import audit as audit_store
-from agentdesk.llm import REQUEST_TIMEOUT_S, LlmUnavailable, chat_client
-from agentdesk.presentations.packs import load_packs
-from agentdesk.presentations.pipeline import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.llm import REQUEST_TIMEOUT_S, LlmUnavailable, chat_client
+from nexuusbot.presentations.packs import load_packs
+from nexuusbot.presentations.pipeline import (
     call_model,
     gather,
     guard_numbers,
     outline_from_fill,
     run_fill,
 )
-from agentdesk.presentations.writer import read_parts, slide_texts
+from nexuusbot.presentations.writer import read_parts, slide_texts
 from mock_endpoint import MockEndpointHandler
 
 RECIPES = {
@@ -202,7 +202,7 @@ def test_every_client_the_desk_builds_takes_the_timeout_keyword():
     factories every call-site can reach all accept the keyword (no
     TypeError, only the endpoint's own named refusal), so call_model
     never needs to guess again."""
-    from agentdesk.llm import env_chat, settings_chat
+    from nexuusbot.llm import env_chat, settings_chat
 
     for client in (chat_client("http://127.0.0.1:9/v1", "k", "m"),
                    settings_chat(None), env_chat()):
@@ -213,7 +213,7 @@ def test_every_client_the_desk_builds_takes_the_timeout_keyword():
 def test_call_model_hands_the_timeout_to_the_client_unchanged():
     """One call, one keyword: the seconds the run configured are the
     seconds the client sees on its socket cap."""
-    from agentdesk.presentations.pipeline import call_model
+    from nexuusbot.presentations.pipeline import call_model
 
     seen = []
 
@@ -348,8 +348,8 @@ def test_a_workbook_note_uses_the_file_name_and_keeps_line_breaks():
         [{"title": "Context", "bullets": ["Noted"], "citations": [1]}],
         sources,
     )
-    from agentdesk.presentations.ooxml import build_shell
-    from agentdesk.presentations.writer import write_deck
+    from nexuusbot.presentations.ooxml import build_shell
+    from nexuusbot.presentations.writer import write_deck
     recipe = json.loads((ROOT / "registry/plugins/presentation-starter/recipes/briefing.json").read_text())
     # One section is enough for the notes part; the recipe still names the layouts.
     blob = write_deck(build_shell(), recipe, {
@@ -451,7 +451,7 @@ def test_a_write_failure_does_not_blame_the_endpoint():
 
     booted = server_harness.Booted(llm=llm)
     booted.server.llm_endpoint = "http://127.0.0.1:9/v1"
-    import agentdesk.presentations.deliver as deliver
+    import nexuusbot.presentations.deliver as deliver
 
     def boom(*_args, **_kwargs):
         raise OSError("disk full")
@@ -472,8 +472,8 @@ def test_a_write_failure_does_not_blame_the_endpoint():
 
 
 def test_the_fill_cause_reads_the_step_off_the_exception():
-    from agentdesk.llm import LlmUnavailable
-    from agentdesk.presentations.pipeline import fill_cause
+    from nexuusbot.llm import LlmUnavailable
+    from nexuusbot.presentations.pipeline import fill_cause
 
     assert fill_cause(LlmUnavailable("the endpoint is not answering")) == \
         "the endpoint is not answering"
@@ -488,7 +488,7 @@ def test_a_missing_shell_variant_degrades_instead_of_raising(tmp_path):
     # run_fill sits under both callers' None guards, but its own contract
     # is "a written deck or a cause": a bad variant is a cause, never an
     # AttributeError past the ladder.
-    from agentdesk.presentations.pipeline import run_fill
+    from nexuusbot.presentations.pipeline import run_fill
 
     def llm(prompt, timeout=30):
         return json.dumps({"title": "Noted", "bullets": ["No figure."], "citations": []})

@@ -4,7 +4,7 @@ with their named reason. Each fixture lives in tests/fixtures/validator."""
 from . import test_validator_support  # noqa: F401  (puts src/ on sys.path)
 from .test_validator_support import fixture
 
-from agentdesk.validator import validate_plugin
+from nexuusbot.validator import validate_plugin
 
 
 def codes(verdict):

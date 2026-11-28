@@ -27,9 +27,9 @@ import server_harness  # noqa: E402
 import pytest  # noqa: E402
 from plugins_fixtures import valid_zip  # noqa: E402
 
-from agentdesk.assistant import audit as audit_store  # noqa: E402
-from agentdesk.peers.store import PeerStore, derive_token  # noqa: E402
-from agentdesk.registry.install import tree_digest  # noqa: E402
+from nexuusbot.assistant import audit as audit_store  # noqa: E402
+from nexuusbot.peers.store import PeerStore, derive_token  # noqa: E402
+from nexuusbot.registry.install import tree_digest  # noqa: E402
 
 PLUGIN_ID = "sales-delta-widget"
 
@@ -450,7 +450,7 @@ def test_missing_published_digest_is_a_named_refusal_never_verified(
         tmp_path, monkeypatch):
     """/peer/info without a sha256 must not skip verification while the
     audit row still says verified: it is a named refusal."""
-    from agentdesk.server import peers_api as server_app
+    from nexuusbot.server import peers_api as server_app
 
     booted = _boot()
     try:
@@ -480,8 +480,8 @@ def test_validator_refusal_on_peer_install_is_named_and_audited(
         tmp_path, monkeypatch):
     """A bundle that fails the shared validator is a named refusal with
     an error audit row, never an unnamed 500."""
-    from agentdesk.plugins.runtime import PluginError
-    from agentdesk.server import peers_api as server_app
+    from nexuusbot.plugins.runtime import PluginError
+    from nexuusbot.server import peers_api as server_app
 
     booted = _boot()
     try:
@@ -496,7 +496,7 @@ def test_validator_refusal_on_peer_install_is_named_and_audited(
 
         with _zipfile.ZipFile(shell) as archive:
             archive.extractall(staged)
-        from agentdesk.registry.install import tree_digest as _digest
+        from nexuusbot.registry.install import tree_digest as _digest
 
         digest = _digest(staged)
         fake = _FakePeerClient(
@@ -583,7 +583,7 @@ def test_discovered_cards_do_not_prefill_unconnectable_addresses():
     """A desk on another machine shows its real source address and an
     honest not-connectable note; only same-machine desks prefill the
     pair form."""
-    from agentdesk.server.peers_view import render_peers_page
+    from nexuusbot.server.peers_view import render_peers_page
 
     catalog = {
         "ok": True,

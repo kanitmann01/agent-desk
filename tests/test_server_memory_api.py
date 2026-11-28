@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
+from nexuusbot.assistant import audit as audit_store
 
 
 class CaptureLlm:
@@ -40,7 +40,7 @@ def _review_first_settings():
     import sqlite3
     import time
 
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.settings import SettingsStore
 
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False),
                              time.time)
@@ -237,7 +237,7 @@ def test_entity_merge_route_unions_aliases_and_relinks_facts(env, auth):
 
 
 def test_entity_merge_route_reconciles_the_survivors_observation(env, auth):
-    from agentdesk.memory import loop as memory_loop
+    from nexuusbot.memory import loop as memory_loop
 
     facts = [
         _add_fact(env, auth, text) for text in (

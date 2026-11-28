@@ -106,8 +106,8 @@ def _boot_temp_desk(folder: Path):
     The data and template folders are this boot's own, and the keychain
     is the in-memory stand-in, so no real user store is read or written.
     """
-    from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-    from agentdesk.server import app as server_app
+    from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+    from nexuusbot.server import app as server_app
 
     saved = _pin_env(folder)
     try:
@@ -181,7 +181,7 @@ def main() -> int:
                         help="the turn's ceiling in seconds")
     args = parser.parse_args()
 
-    from agentdesk.engine import (
+    from nexuusbot.engine import (
         ConnectionSpec,
         actions_from_events,
         available,
@@ -194,7 +194,7 @@ def main() -> int:
 
     home = Path(args.home) if args.home else None
     if home is None:
-        from agentdesk.server.app import default_data_dir
+        from nexuusbot.server.app import default_data_dir
 
         home = home_for(default_data_dir())
     if not available(home):

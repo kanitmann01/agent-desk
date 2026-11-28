@@ -14,16 +14,16 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.agents import runner
-from agentdesk.agents.registry import (
+from nexuusbot.agents import runner
+from nexuusbot.agents.registry import (
     CONTEXT_NONE,
     CONTEXT_WORKBOOK,
     ROSTER,
     AgentKind,
     find_agent,
 )
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.core import Fact
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.core import Fact
 
 
 class ScriptLlm:

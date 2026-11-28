@@ -17,8 +17,8 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 import server_harness
-from agentdesk.inbox.core import STATUS_DISMISSED, STATUS_WAITING
-from agentdesk.ledger import Ledger
+from nexuusbot.inbox.core import STATUS_DISMISSED, STATUS_WAITING
+from nexuusbot.ledger import Ledger
 
 
 @pytest.fixture

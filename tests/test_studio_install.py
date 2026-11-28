@@ -98,6 +98,6 @@ def test_an_invalid_studio_plugin_is_refused(booted):
     assert status == 400, body
     error = json.loads(body)
     assert error["error"] == "studio:validation-failed"
-    from agentdesk.plugins.runtime import PluginError
+    from nexuusbot.plugins.runtime import PluginError
     with pytest.raises(PluginError):
         booted.server.plugins.record("broken-plugin")

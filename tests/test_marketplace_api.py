@@ -12,7 +12,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from server_harness import Booted
-from agentdesk.registry.install import tree_digest
+from nexuusbot.registry.install import tree_digest
 
 
 @pytest.fixture()
@@ -961,7 +961,7 @@ def test_inline_publish_requires_changelog_and_license_grant(booted):
 # -- signed policy, admin and trust center (T13) -------------------------
 
 from trust_fixtures import make_key, policy_bundle, policy_bundle_fields  # noqa: E402
-from agentdesk.marketplace.signed_policy import fingerprint  # noqa: E402
+from nexuusbot.marketplace.signed_policy import fingerprint  # noqa: E402
 
 
 @pytest.fixture()

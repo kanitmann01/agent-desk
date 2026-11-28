@@ -6,12 +6,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from agentdesk.insight import insight_connect
-from agentdesk.insight import reading as insight_reading
-from agentdesk.insight import workbook
-from agentdesk.insight.preferences import defaults
-from agentdesk.insight.service import attach_cards
-from agentdesk.insight.types import InsightContext
+from nexuusbot.insight import insight_connect
+from nexuusbot.insight import reading as insight_reading
+from nexuusbot.insight import workbook
+from nexuusbot.insight.preferences import defaults
+from nexuusbot.insight.service import attach_cards
+from nexuusbot.insight.types import InsightContext
 
 PRESS = {
     "label": "Explain this range",

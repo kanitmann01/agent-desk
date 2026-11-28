@@ -1,0 +1,1037 @@
+"""The plugin runtime lifecycle: install, pilot, scopes, rollback, amber.
+
+Every install validates first through the shared ``validate_plugin``:
+nothing that fails validation executes or touches disk beyond the
+caller's own staging. Installed plugins land in versioned directories
+recorded in a lockfile. Updates diff scopes: identical or narrower
+applies silently, a widening holds for re-consent with the exact added
+scopes. Uninstall keeps plugin data until a separately named purge.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import tempfile
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime
+from glob import glob
+from pathlib import Path
+
+from nexuusbot.plugins.cards import (
+    attention_card,
+    setup_card,
+    tracker_card,
+    widget_card,
+)
+from nexuusbot.plugins.execute import PluginWidgetRunner
+from nexuusbot.registry.install import tree_digest
+from nexuusbot.validator.core import validate_plugin
+from nexuusbot.validator.grammar import SAFE_NAME as _SAFE_NAME
+
+# The PRD's binding count (R3.7): "a visible 'pilot' badge for the first
+# 5 runs". The test pins this constant against that sentence.
+PILOT_VIEWS = 5
+
+# One zip member may declare at most this many uncompressed bytes. The
+# HTTP boundary caps compressed bodies; this caps what a small bundle can
+# become in memory when extracted (a peer bundle is another desk's input).
+MAX_ZIP_MEMBER_BYTES = 16 * 1024 * 1024
+
+
+def _alias_id(name: str) -> str:
+    """Derive a filesystem- and config-safe instance id from a display name.
+
+    Lowercases, collapses every run of characters outside [A-Za-z0-9._-] into a
+    single dash, trims the dashes, and falls back to "instance" when nothing
+    survives, so the result is always usable as a key.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
+    return cleaned or "instance"
+
+
+def _require_safe_name(value: str, what: str) -> None:
+    """Refuse names that cannot safely become path fragments.
+
+    Empty values, path separators, a leading dash, a ".." anywhere and anything
+    outside the safe-name pattern are refused with plugin:unsafe-name and status
+    400; the what argument names the offending field in the message.
+    """
+    if (not value or "/" in value or "\\" in value or value.startswith("-")
+            or ".." in value or not _SAFE_NAME.match(value)):
+        raise PluginError("plugin:unsafe-name",
+                          f"{what} is not a safe name: {value[:40]!r}", 400)
+
+
+class PluginError(Exception):
+    """A named lifecycle refusal: ``code`` is the stable vocabulary."""
+
+    def __init__(self, code: str, message: str, status: int = 409) -> None:
+        """Carry the stable refusal code, the human message and the HTTP status.
+
+        The code is the vocabulary clients match on and is not derived from the
+        message; status defaults to 409 because most refusals are a conflict with the
+        current lifecycle state rather than a malformed request.
+        """
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+@dataclass(frozen=True)
+class ExtractedPlugin:
+    dir: Path
+    manifest: dict
+    sha256: str
+
+
+# One digest implementation for every pin: the registry release walk in
+# registry/install.py. The plugin lockfile pins the same bytes the
+# registry index pins, so both verifiers must walk a tree in the same
+# order on every platform; that function's docstring records why the
+# order is the posix relpath string, never a pathlib object sort.
+_tree_digest = tree_digest
+
+
+def extract_plugin_zip(zip_path: Path, destination: Path) -> None:
+    """Extract member by member. Python's zipfile has no extraction
+    filter, so containment is enforced here: every resolved target must
+    stay inside ``destination``, and no member's declared size may exceed
+    MAX_ZIP_MEMBER_BYTES, checked before any decompression. The one
+    extractor for every zip this app opens (installs, updates, peer
+    bundles); a refusal raises PluginError with ``install:unsafe-zip``."""
+    with zipfile.ZipFile(zip_path) as archive:
+        for info in archive.infolist():
+            name = Path(info.filename)
+            if name.is_absolute() or ".." in name.parts:
+                raise PluginError("install:unsafe-zip",
+                                  f"unsafe zip entry: {info.filename}", 400)
+            target = destination / name
+            if not str(target.resolve()).startswith(str(destination.resolve())):
+                raise PluginError("install:unsafe-zip",
+                                  f"zip entry escapes the plugin root: {info.filename}",
+                                  400)
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if info.file_size > MAX_ZIP_MEMBER_BYTES:
+                raise PluginError(
+                    "install:unsafe-zip",
+                    f"zip entry {info.filename} declares {info.file_size} bytes, "
+                    f"over the {MAX_ZIP_MEMBER_BYTES} byte cap", 400)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(info))
+
+
+def scope_items(permissions: dict) -> set[str]:
+    """Serialize a permission block into comparable leaf scopes."""
+    items: set[str] = set()
+
+    def walk(prefix: str, node) -> None:
+        """Flatten one node of a permission block into "dotted.path: value" leaves.
+
+        Dictionary keys extend the dotted prefix; list entries keep the prefix they
+        were found under, so a list becomes several leaves at one path. Flattening to
+        text is what makes two permission blocks comparable as sets.
+        """
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(f"{prefix}.{key}" if prefix else key, value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(prefix, value)
+        else:
+            items.add(f"{prefix}: {node}")
+
+    walk("", permissions or {})
+    return items
+
+
+def scope_diff(old_permissions: dict, new_permissions: dict) -> list[str]:
+    """Scopes the new manifest adds over the old one, sorted."""
+    return sorted(scope_items(new_permissions) - scope_items(old_permissions))
+
+
+def _scope_block(manifest: dict) -> dict:
+    """Both permission blocks; base leaves keep their historical labels."""
+    block: dict = {}
+    base = manifest.get("permissions")
+    if isinstance(base, dict):
+        block.update(base)
+    optional = manifest.get("optionalPermissions")
+    if isinstance(optional, dict):
+        block["optionalPermissions"] = optional
+    return block
+
+
+class PluginRuntime:
+    """Owns the installed plugin set: the lockfile is its source of truth."""
+
+    def __init__(self, plugins_dir: Path, data_dir: Path, workspace_dir: Path,
+                 now: str | None = None,
+                 runner: PluginWidgetRunner | None = None) -> None:
+        """Bind the runtime to its installed-plugin, data and workspace roots.
+
+        Every timestamp written to the lockfile comes from now, which is frozen at
+        construction when supplied and otherwise read from the local clock at second
+        precision. An omitted runner is built over the same workspace directory, so
+        the two never disagree about where plugin files live.
+        """
+        self.plugins_dir = Path(plugins_dir)
+        self.data_dir = Path(data_dir)
+        self.workspace_dir = Path(workspace_dir)
+        self.now = now or datetime.now().isoformat(timespec="seconds")
+        self.runner = runner if runner is not None else PluginWidgetRunner(workspace_dir)
+        self._lockfile = self.plugins_dir / "lockfile.json"
+        self._staging = self.plugins_dir / ".staging"
+
+    # ---- persistence ----
+
+    def _read(self) -> dict:
+        """Load the lockfile, treating an absent file as an empty registry.
+
+        Read-only: nothing is created here. The returned document always has
+        "plugins" and "graveyard" mappings; a malformed lockfile raises rather than
+        being silently reset.
+        """
+        if not self._lockfile.exists():
+            return {"plugins": {}, "graveyard": {}}
+        return json.loads(self._lockfile.read_text(encoding="utf-8"))
+
+    def _write(self, document: dict) -> None:
+        """Persist the lockfile as indented JSON with sorted keys.
+
+        The write is atomic: the document lands in a sibling temp file
+        that replaces the lockfile in one step, so a crash mid-write
+        leaves the previous lockfile in place instead of a partial file
+        every plugins route chokes on (the readers raise on malformed
+        JSON by design, so this is the only crash-safe shape).
+        """
+        self.plugins_dir.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+        tmp = self._lockfile.with_name(self._lockfile.name + ".tmp")
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, self._lockfile)
+
+    def _entry(self, state: dict, plugin_id: str) -> dict:
+        """Return one plugin's lockfile entry, refusing an unknown id with 404.
+
+        Refused as plugin:unknown. This is the lookup for operations that need an
+        installed plugin; the non-raising lookup is for callers where absence is a
+        normal case.
+        """
+        entry = state["plugins"].get(plugin_id)
+        if entry is None:
+            raise PluginError("plugin:unknown", f"no installed plugin {plugin_id}", 404)
+        return entry
+
+    @staticmethod
+    def _active_version_dir(entry: dict) -> Path:
+        """The directory of the version the user is actually on: after a
+        rollback that is not the newest entry, and re-consent as well as
+        rendering must compare against what the user sees."""
+        active = entry.get("active_version")
+        for version in entry["versions"]:
+            if version["version"] == active:
+                return Path(version["dir"])
+        return Path(entry["versions"][-1]["dir"])
+
+    def _verify_installed(self, entry: dict) -> None:
+        """Fail closed when installed files no longer match their pin.
+
+        The lockfile records the digest computed at install time; anything
+        that edits the active version directory afterwards must not render,
+        re-test, or report source status. A missing directory hashes to the
+        empty tree and therefore also fails this check.
+        """
+        version_dir = self._active_version_dir(entry)
+        expected = ""
+        active = entry.get("active_version")
+        for version in entry.get("versions", []):
+            if version.get("version") == active:
+                expected = version.get("sha256", "")
+                break
+        else:
+            if entry.get("versions"):
+                expected = entry["versions"][-1].get("sha256", "")
+        if not expected or _tree_digest(version_dir) != expected:
+            raise PluginError(
+                "plugin:tampered",
+                f"installed files changed after install: {entry.get('id', '')}",
+                409,
+            )
+
+    def _attach_runner(self, plugin_id: str, entry: dict) -> dict:
+        """Run the plugin's declared data source through the widget runner.
+
+        The runner returns probe-shaped status (fresh/attention with a
+        cause) whether it executed the source or honestly could not; a
+        runner failure falls back to the probe so an install never fails
+        on the widget half alone.
+        """
+        version_dir = self._active_version_dir(entry)
+        manifest: dict = {}
+        try:
+            manifest = json.loads((version_dir / "manifest.json").read_text(
+                encoding="utf-8"))
+            return self.runner.attach(plugin_id, manifest, version_dir,
+                                      Path(entry["data_dir"]))
+        except Exception:  # noqa: BLE001 - the probe is the honest fallback
+            return self.probe(plugin_id, manifest)
+
+    # ---- lifecycle ----
+
+    def install(self, plugin_path: Path, source: str = "zip") -> dict:
+        """Install a plugin from a zip or an already-verified directory.
+
+        Directory sources are the registry path: the registry machinery
+        resolves the pin, verifies the tree digest and runs the shared
+        validator before staging; everything after validation is the
+        same for both shapes. An install over an already-installed
+        plugin is an update: the same scope-diff consent machinery
+        decides, and version history and pilot state survive instead of
+        being replaced.
+        """
+        plugin_path = Path(plugin_path)
+        try:
+            verdict = validate_plugin(plugin_path)
+        except PluginError:
+            raise
+        except Exception as exc:  # unreadable file: a bad request
+            raise PluginError("install:unreadable", str(exc), 400)
+        if not verdict.ok:
+            first = verdict.failures[0]
+            raise PluginError("install:validator-failed",
+                              f"{first.code}: {first.message}", 400)
+
+        state = self._read()
+        self._staging.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
+            staged = Path(tmp) / "plugin"
+            if plugin_path.is_dir():
+                shutil.copytree(plugin_path, staged)
+            else:
+                extract_plugin_zip(plugin_path, staged)
+            manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
+            plugin_id = str(manifest["id"])
+            version = str(manifest["version"])
+            _require_safe_name(plugin_id, "plugin id")
+            _require_safe_name(version, "version")
+            digest = _tree_digest(staged)
+            existing = state["plugins"].get(plugin_id)
+            if existing is not None and existing.get("versions"):
+                # The Install button must not grant what the Update
+                # button would ask for: one shared decision for both.
+                outcome = self._apply_or_hold(state, existing, staged,
+                                              manifest, version, digest)
+                outcome["id"] = plugin_id
+                return outcome
+            version_dir = self.plugins_dir / plugin_id / version
+            version_dir.parent.mkdir(parents=True, exist_ok=True)
+            if version_dir.exists():
+                shutil.rmtree(version_dir)
+            shutil.move(str(staged), str(version_dir))
+
+        data_dir = self.data_dir / plugin_id
+        data_dir.mkdir(parents=True, exist_ok=True)
+        schedules = [event for event in manifest.get("activationEvents", [])
+                     if event.startswith("onSchedule:")]
+        entry = {
+            "id": plugin_id,
+            "name": str(manifest.get("name", plugin_id)),
+            "state": "enabled",
+            "active_version": version,
+            "source": source,
+            "sha256": digest,
+            "installed_at": self.now,
+            "pilot_views_left": PILOT_VIEWS,
+            "versions": [{"version": version, "sha256": digest,
+                          "dir": str(version_dir), "installed_at": self.now}],
+            "pending_update": None,
+            "schedules": schedules,
+            "data_dir": str(data_dir),
+        }
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
+        state["plugins"][plugin_id] = entry
+        self._write(state)
+        self._materialize_alias(manifest)
+        return {"ok": True, "id": plugin_id, "version": version,
+                "sha256": digest, "pilot": True}
+
+    def _apply_or_hold(self, state: dict, entry: dict, staged: Path,
+                       manifest: dict, version: str, digest: str) -> dict:
+        """The one update decision, shared by update() and install-over.
+
+        A widening release is held for consent as pending_update with the
+        exact added scopes; an identical or narrower one is appended to
+        the version history and made active. The staged tree is moved out
+        of its temp directory either way; pilot state is never touched,
+        so an install-over cannot restart the pilot badge.
+        """
+        if entry.get("pending_update"):
+            raise PluginError("update:already-pending",
+                              f"{entry['id']} already holds a re-consent", 409)
+        current_manifest = json.loads(
+            (self._active_version_dir(entry) / "manifest.json").read_text(encoding="utf-8"))
+        # Optional permissions are capability reach too: a release that
+        # adds a network host or a new optional file scope must be held for
+        # re-consent exactly like a base permission widening.
+        added = scope_diff(_scope_block(current_manifest),
+                           _scope_block(manifest))
+        if added:
+            pending_dir = self._staging / f"{entry['id']}-{version}"
+            if pending_dir.exists():
+                shutil.rmtree(pending_dir)
+            shutil.move(str(staged), str(pending_dir))
+            entry["pending_update"] = {
+                "version": version, "sha256": digest,
+                "dir": str(pending_dir), "added_scopes": added,
+            }
+            self._write(state)
+            return {"applied": False, "status": "pending-consent",
+                    "added_scopes": added}
+        version_dir = self.plugins_dir / entry["id"] / version
+        version_dir.parent.mkdir(parents=True, exist_ok=True)
+        if version_dir.exists():
+            shutil.rmtree(version_dir)
+        shutil.move(str(staged), str(version_dir))
+        entry["versions"].append({"version": version, "sha256": digest,
+                                  "dir": str(version_dir),
+                                  "installed_at": self.now})
+        entry["active_version"] = version
+        entry["sha256"] = digest
+        entry["data_source"] = self._attach_runner(entry["id"], entry)
+        self._write(state)
+        return {"applied": True, "status": "updated", "version": version}
+
+    def update(self, plugin_id: str, zip_path: Path) -> dict:
+        """Install a newer version from a zip, holding it for consent when it widens scopes.
+
+        The zip is validated first. If the new manifest adds any scope, base or
+        optional, the staged tree is kept under the staging directory and recorded as
+        pending_update instead of being applied, so nothing runs with capabilities the
+        user has not seen; otherwise the version is appended and made active. Only one
+        held update exists per plugin at a time. The apply-or-hold decision
+        is the one shared helper install-over rides too.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        if entry["state"] == "uninstalled":
+            raise PluginError("update:uninstalled",
+                              f"{plugin_id} is uninstalled", 409)
+        if entry.get("pending_update"):
+            raise PluginError("update:already-pending",
+                              f"{plugin_id} already holds a re-consent", 409)
+
+        try:
+            verdict = validate_plugin(Path(zip_path))
+        except PluginError:
+            raise
+        except Exception as exc:
+            raise PluginError("update:unreadable", str(exc), 400)
+        if not verdict.ok:
+            first = verdict.failures[0]
+            raise PluginError("update:validator-failed",
+                              f"{first.code}: {first.message}", 400)
+
+        self._staging.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
+            staged = Path(tmp) / "plugin"
+            extract_plugin_zip(Path(zip_path), staged)
+            manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
+            version = str(manifest["version"])
+            digest = _tree_digest(staged)
+            return self._apply_or_hold(state, entry, staged, manifest,
+                                       version, digest)
+
+    def consent(self, plugin_id: str) -> dict:
+        """Apply the update that was held for re-consent.
+
+        Moves the staged tree into the installed version directory, appends it to the
+        version history and clears the pending record; refuses with
+        consent:nothing-pending when no update is held.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        pending = entry.get("pending_update")
+        if not pending:
+            raise PluginError("consent:nothing-pending",
+                              f"{plugin_id} has no update held for consent", 404)
+        version_dir = self.plugins_dir / plugin_id / pending["version"]
+        version_dir.parent.mkdir(parents=True, exist_ok=True)
+        if version_dir.exists():
+            shutil.rmtree(version_dir)
+        shutil.move(pending["dir"], str(version_dir))
+        entry["versions"].append({"version": pending["version"],
+                                  "sha256": pending["sha256"],
+                                  "dir": str(version_dir),
+                                  "installed_at": self.now})
+        entry["active_version"] = pending["version"]
+        entry["sha256"] = pending["sha256"]
+        entry["pending_update"] = None
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
+        self._write(state)
+        return {"applied": True, "version": pending["version"]}
+
+    def pending_diff(self, plugin_id: str) -> dict:
+        """Report the version and added scopes of the held update.
+
+        Refuses with consent:nothing-pending when no update is held, so a caller never
+        shows an empty consent screen as if the user had nothing to approve.
+        """
+        entry = self._entry(self._read(), plugin_id)
+        pending = entry.get("pending_update")
+        if not pending:
+            raise PluginError("consent:nothing-pending",
+                              f"{plugin_id} has no update held for consent", 404)
+        return {"version": pending["version"],
+                "added_scopes": pending["added_scopes"]}
+
+    def decline_pending(self, plugin_id: str) -> dict:
+        """Drop a held update and its staged tree, a public operation."""
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        pending = entry.get("pending_update")
+        if not pending:
+            raise PluginError("consent:nothing-pending",
+                              f"{plugin_id} has no update held for consent", 404)
+        staged = Path(pending.get("dir") or "")
+        try:
+            if staged.is_dir():
+                shutil.rmtree(staged)
+        except OSError:
+            pass
+        entry["pending_update"] = None
+        self._write(state)
+        return {"id": plugin_id, "version": pending.get("version", ""),
+                "status": "rejected"}
+
+    def rollback(self, plugin_id: str, to_version: str | None = None) -> dict:
+        """Make an earlier recorded version the active one.
+
+        With to_version the target must already be recorded and strictly older than
+        the active version; without it the immediately preceding version is used.
+        Installed files are left in place, so the newer version can be returned to,
+        and the data source re-attaches against whatever the target declares.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        versions = entry["versions"]
+        names = [v["version"] for v in versions]
+        if entry["active_version"] not in names:
+            raise PluginError("rollback:unknown-active",
+                              f"{plugin_id} active version is not recorded", 409)
+        index = names.index(entry["active_version"])
+        if to_version:
+            if to_version not in names:
+                raise PluginError("rollback:unknown-version",
+                                  f"{plugin_id} has no recorded version {to_version}",
+                                  409)
+            target = names.index(to_version)
+            if target >= index:
+                raise PluginError(
+                    "rollback:not-prior",
+                    f"{to_version} is not older than the active version", 409)
+            previous = versions[target]
+        else:
+            if index == 0:
+                raise PluginError("rollback:no-prior",
+                                  f"{plugin_id} has no prior version", 409)
+            previous = versions[index - 1]
+        entry["active_version"] = previous["version"]
+        entry["sha256"] = previous["sha256"]
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
+        self._write(state)
+        return {"rolled_back_to": previous["version"]}
+
+    def enable(self, plugin_id: str) -> dict:
+        """Mark a plugin enabled and re-attach its data source.
+
+        The state is written before attaching, so a source that cannot attach leaves
+        the plugin enabled with a probe-shaped status rather than failing the enable.
+        """
+        result = self._set_state(plugin_id, "enabled")
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
+        self._write(state)
+        return result
+
+    def disable(self, plugin_id: str) -> dict:
+        # A disabled plugin stops touching its declared files: the
+        # runner detaches, which stops polling and closes the store.
+        """Stop the plugin's data source and mark the plugin disabled.
+
+        Detaching happens first, which stops polling and closes the store, so a
+        disabled plugin stops touching its declared files immediately, even when the
+        state write afterwards fails.
+        """
+        self.runner.detach(plugin_id)
+        return self._set_state(plugin_id, "disabled")
+
+    def _set_state(self, plugin_id: str, state_name: str) -> dict:
+        """Record a plugin's lifecycle state in the lockfile.
+
+        Only the state changes, and only a small summary is echoed back; attaching or
+        detaching the data source is the caller's job.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        entry["state"] = state_name
+        self._write(state)
+        return {"id": plugin_id, "state": state_name}
+
+    def uninstall(self, plugin_id: str) -> dict:
+        """Delete every installed version's files but keep the plugin's own data.
+
+        The entry stays in the lockfile marked uninstalled with no versions, no
+        pending update and no schedules, and its data directory is recorded in the
+        graveyard; only an explicit purge removes the data.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        self.runner.detach(plugin_id)
+        for version_entry in entry["versions"]:
+            version_dir = Path(version_entry["dir"])
+            if version_dir.exists():
+                shutil.rmtree(version_dir)
+        if entry.get("pending_update") and Path(entry["pending_update"]["dir"]).exists():
+            shutil.rmtree(entry["pending_update"]["dir"])
+        entry["versions"] = []
+        entry["pending_update"] = None
+        entry["schedules"] = []
+        entry["state"] = "uninstalled"
+        state["graveyard"][plugin_id] = {"data_dir": entry["data_dir"]}
+        self._write(state)
+        return {"id": plugin_id, "state": "uninstalled",
+                "data_preserved": True, "data_dir": entry["data_dir"]}
+
+    def purge_data(self, plugin_id: str, confirmation: str | None) -> dict:
+        """Delete a plugin's data directory and forget the plugin entirely.
+
+        Refuses unless confirmation is exactly "delete-data:<plugin_id>". The
+        confirmation is a separate argument because an uninstall keeps data by
+        design, and only this call is allowed to destroy it.
+        """
+        expected = f"delete-data:{plugin_id}"
+        if confirmation != expected:
+            raise PluginError(
+                "purge:confirmation-required",
+                f"deleting plugin data needs the separate confirmation {expected!r}",
+                409)
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        data_dir = Path(entry["data_dir"])
+        if data_dir.exists():
+            shutil.rmtree(data_dir)
+        state["graveyard"].pop(plugin_id, None)
+        del state["plugins"][plugin_id]
+        self._write(state)
+        return {"purged": plugin_id}
+
+    # ---- observation ----
+
+    def probe(self, plugin_id: str, manifest: dict | None = None) -> dict:
+        """Run the plugin's declared data source: file presence, honestly."""
+        manifest = manifest or self._manifest(plugin_id)
+        widgets = manifest.get("contributes", {}).get("widgets", [])
+        if not widgets:
+            return {"status": "attention",
+                    "cause": "This plugin adds no card to your dashboard.",
+                    "checked_at": ""}
+        source = widgets[0].get("dataSource", {})
+        pattern = str(source.get("file", "")).replace("${workspace}",
+                                                      str(self.workspace_dir))
+        if not pattern:
+            return {"status": "attention", "cause": "data source has no file",
+                    "checked_at": self.now}
+        matches = sorted(glob(pattern))
+        if matches:
+            return {"status": "fresh", "cause": "",
+                    "checked_at": self.now, "file": Path(matches[0]).name}
+        return {"status": "attention",
+                "cause": f"no file matches {source.get('file')}",
+                "checked_at": self.now}
+
+    def retest(self, plugin_id: str) -> dict:
+        """Re-read a plugin's data source and store the result on its entry.
+
+        The installed files are verified against their pin first. An attached runner
+        re-tests in place; an enabled but unattached plugin retries the attachment,
+        which is the recovery path for a source whose file appeared after install; a
+        disabled or uninstalled plugin only refreshes the honest file probe.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        self._verify_installed(entry)
+        if self.runner.attached(plugin_id):
+            entry["data_source"] = self.runner.retest(plugin_id)
+        elif entry.get("state") == "enabled":
+            # The amber card's own recovery path: an install that found
+            # no workbook left the source unattached, and the file may
+            # have landed since. Re-test retries the attachment, so the
+            # card binds real values instead of only file presence;
+            # attach's probe-shaped status answers the still-missing
+            # case exactly as the probe did.
+            entry["data_source"] = self._attach_runner(plugin_id, entry)
+        else:
+            # A disabled or uninstalled plugin never (re)attaches: its
+            # re-test only refreshes the honest probe line.
+            entry["data_source"] = self.probe(plugin_id)
+        self._write(state)
+        return dict(entry["data_source"])
+
+    def source_status(self, plugin_id: str) -> dict:
+        """Return the plugin's stored data-source status, probing when none is stored.
+
+        The installed files are verified against their pin first, so a tree edited
+        after install is refused rather than reported as fresh.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        self._verify_installed(entry)
+        return dict(entry.get("data_source") or self.probe(plugin_id))
+
+    def _manifest(self, plugin_id: str) -> dict:
+        """Load the manifest of the newest installed version, or an empty mapping.
+
+        Returns {} when no version is installed or the manifest is missing. It reads
+        the newest recorded version, not the active one, so after a rollback this can
+        describe a version the user is not running.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        manifest_path = (Path(entry["versions"][-1]["dir"]) / "manifest.json") \
+            if entry["versions"] else None
+        if manifest_path is None or not manifest_path.exists():
+            return {}
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    def record(self, plugin_id: str) -> dict:
+        """Return a copy of one plugin's lockfile entry.
+
+        The copy keeps callers from mutating the state the lockfile was read into.
+        """
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        return dict(entry)
+
+    def version_dir(self, plugin_id: str) -> Path:
+        """The directory of the active version: what publish republishes."""
+        entry = self._entry(self._read(), plugin_id)
+        return self._active_version_dir(entry)
+
+    def list_records(self) -> list[dict]:
+        """Return copies of every plugin's lockfile entry, uninstalled ones included.
+
+        Copies keep callers from mutating the state the lockfile was read into.
+        """
+        return [dict(entry) for entry in self._read()["plugins"].values()]
+
+    def emission_targets(self, state: dict, manifest_of):
+        """The one emission spine under layout_keys, widget_cards and
+        record_dashboard_view.
+
+        Yields (entry, manifest, config, target, folds_into_target) for the
+        decisions all three loops share: skip disabled or versionless
+        entries, read the manifest through manifest_of, and fold an alias
+        or instance-capable plugin into its target, yielded once no matter
+        how many entries point at it. The callers keep their own edge
+        decisions: layout_keys owns the unconfirmed-main-instance rule,
+        widget_cards the tampered-tree attention card, record_dashboard_view
+        the spend decision. manifest_of exists because the readers
+        deliberately disagree: layout_keys reads the newest recorded
+        version, the card emitters the active one.
+        """
+        emitted: set[str] = set()
+        for entry in state["plugins"].values():
+            if entry["state"] != "enabled" or not entry["versions"]:
+                continue
+            manifest = manifest_of(entry)
+            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+            plugin_id = entry["id"]
+            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
+            folds = bool(config.get("aliasOf") or self._is_instance_capable(manifest))
+            if folds:
+                if target in emitted:
+                    continue
+                emitted.add(target)
+            yield entry, manifest, config, target, folds
+
+    def _newest_manifest(self, entry: dict) -> dict:
+        """The manifest layout_keys reads under: the newest recorded
+        version, not the active one (the same source _manifest serves)."""
+        return self._manifest(entry["id"])
+
+    def layout_keys(self) -> list[str]:
+        """Card keys for the dashboard layout.
+
+        Every config-backed plugin contributes one key per instance of
+        its own; before any instance exists it contributes its plugin id
+        so the setup card has a home. An alias contributes none: its
+        instance is a card of the target.
+        """
+        keys = []
+        for entry, _manifest, _config, target, folds in self.emission_targets(
+                self._read(), self._newest_manifest):
+            if folds:
+                keys.extend(self._instance_keys(target))
+            else:
+                keys.append(entry["id"])
+        return keys
+
+    def _is_instance_capable(self, manifest: dict) -> bool:
+        """True when the manifest itself opts in: the workbook config
+        kind, and no alias (an alias's cards belong to its target)."""
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        return "workbook" in (config.get("kinds") or []) and not config.get("aliasOf")
+
+    def _instance_keys(self, plugin_id: str) -> list[str]:
+        """Return the dashboard card keys for one plugin's instances.
+
+        A plugin with no instances contributes its bare plugin id so the setup card
+        has a home. An unconfirmed main instance also keys as the bare plugin id,
+        matching the setup card, while every other instance keys as
+        "<plugin>~<instance>".
+        """
+        from nexuusbot.plugins.config import InstanceStore
+        instances = InstanceStore(self.data_dir, self.workspace_dir).list(plugin_id)
+        if not instances:
+            return [plugin_id]
+        keys = []
+        for item in instances:
+            instance_id = item["instanceId"]
+            if instance_id == "main" and not item.get("confirmedAt"):
+                # The unconfirmed main instance is the plugin's own setup
+                # card (the card rule keys it by the plugin id), so the
+                # layout must name the plugin id here too: a pick that
+                # never reaches confirm leaves the setup card at home
+                # instead of orphaning it under a key no card carries
+                # (T6 review). A confirmed main keeps plugin~main, the
+                # historical tracker's confirmed card id.
+                keys.append(plugin_id)
+            else:
+                keys.append(f"{plugin_id}~{instance_id}")
+        return keys
+
+    def _plugin_entry(self, state: dict, plugin_id: str):
+        """Return the lockfile entry for an id, or None when the plugin is not there.
+
+        The non-raising lookup, for callers such as alias targets that may name a
+        plugin this runtime does not hold.
+        """
+        return state["plugins"].get(plugin_id)
+
+    def _instance_cards(self, plugin_id: str, entry) -> list[dict]:
+        """Build one dashboard card per instance of a config-backed plugin.
+
+        An instance that is not confirmed gets a setup card whose step is "columns"
+        once a source path is chosen and "source" before that; a confirmed instance
+        gets a tracker card with its live reading. A reading that cannot be produced
+        becomes an attention card carrying the reason instead of a stale value. The
+        entry may be None when an alias names a plugin this runtime no longer holds.
+        """
+        from nexuusbot.plugins.config import ConfigError, InstanceStore
+        from nexuusbot.plugins.tracker import read_tracker
+        store = InstanceStore(self.data_dir, self.workspace_dir)
+        instances = store.list(plugin_id)
+        version = "" if not entry else str(entry.get("active_version") or "")
+        pilot = bool(entry and entry.get("pilot_views_left", 0) > 0)
+        plugin_name = str(entry.get("name") or plugin_id) if entry else plugin_id
+        # The manifest carries which face the manager asked for, so a tile
+        # built as a big number or a bar renders that and not the classic one.
+        manifest = self._active_manifest(entry) if entry else {}
+        if not instances:
+            return [setup_card(plugin_id, "main", title=plugin_name,
+                               version=version, pilot=pilot, step="source")]
+        cards = []
+        for item in instances:
+            instance_id = item["instanceId"]
+            title = str(item.get("name") or instance_id)
+            if not item.get("confirmedAt"):
+                step = "columns" if (item.get("source") or {}).get("path") else "source"
+                cards.append(setup_card(plugin_id, instance_id, title=title,
+                                        version=version, pilot=pilot, step=step))
+                continue
+            try:
+                reading = read_tracker(store, plugin_id, instance_id)
+            except ConfigError as exc:
+                # A reading that cannot be produced becomes an attention
+                # card carrying the reason instead of a stale value.
+                cards.append(attention_card(
+                    plugin_id, instance_id,
+                    card_id=f"{plugin_id}~{instance_id}", title=title,
+                    version=version, pilot=pilot, cause=exc.message))
+                continue
+            cards.append(tracker_card(plugin_id, instance_id, title=title,
+                                      version=version, pilot=pilot,
+                                      reading=reading, manifest=manifest))
+        return cards
+
+    def _active_manifest(self, entry: dict) -> dict:
+        """The active version's manifest with its parsed ui-schema elements.
+
+        The elements ride under a private key so a card can render the face the
+        manager chose without the runtime handing every caller a second file.
+        An unreadable manifest or schema is an empty dict: the card then draws
+        the classic face rather than failing.
+        """
+        try:
+            version_dir = self._active_version_dir(entry)
+        except Exception:  # noqa: BLE001 - a bad entry means no face, not a crash
+            return {}
+        try:
+            manifest = json.loads((version_dir / "manifest.json").read_text(
+                encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        try:
+            widget = ((manifest.get("contributes") or {}).get("widgets") or [None])[0]
+            render = (widget or {}).get("render") or {}
+            schema_file = render.get("file")
+            if isinstance(schema_file, str):
+                schema = json.loads((version_dir / schema_file).read_text(
+                    encoding="utf-8"))
+                elements = schema.get("elements")
+                if isinstance(elements, list):
+                    manifest["_ui_elements"] = elements
+        except (OSError, ValueError):
+            pass
+        # A wizard-built plugin's tile was composed from the manager's own
+        # choice of face, so it draws that. Everything else keeps the classic
+        # tracker card, charts included: excel-report's schema is not
+        # distinguishable from a chosen face by its elements alone.
+        if str(entry.get("source") or "") == "wizard":
+            manifest["_chosen_face"] = True
+        return manifest
+
+    def _materialize_alias(self, manifest: dict) -> None:
+        """Create the instance an alias plugin points at on its target.
+
+        Only manifests carrying a config alias are affected. An instance id derived
+        from the alias is created on the target, and an existing instance of that id
+        is left untouched; any other config refusal propagates.
+        """
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        target = config.get("aliasOf")
+        if not isinstance(target, str) or not target:
+            return
+        from nexuusbot.plugins.config import ConfigError, InstanceStore
+        instance_id = _alias_id(str(config.get("instanceName") or manifest.get("id") or "instance"))
+        store = InstanceStore(self.data_dir, self.workspace_dir)
+        try:
+            store.create(
+                target, instance_id, str(config.get("instanceName") or instance_id),
+                good="down" if config.get("good") == "down" else "up",
+            )
+        except ConfigError as exc:
+            if exc.code != "config:exists":
+                raise
+
+    def widget_cards(self) -> list[dict]:
+        """Widget card data for enabled, installed plugins, pilot and amber
+        included.
+
+        Read-only: it never spends a pilot view and never writes the plugin
+        store, so both the JSON payload and the rendered page can call it
+        without a GET changing state. An attached data source is read live
+        (stale marking included); the ui-schema render model rides along as
+        ``payload`` for views that can draw it.
+        """
+        state = self._read()
+        cards = []
+        for entry, manifest, _config, target, folds in self.emission_targets(
+                state, self._active_manifest):
+            plugin_id = entry["id"]
+            if folds:
+                target_entry = (entry if target == plugin_id
+                                else self._plugin_entry(state, target))
+                cards.extend(self._instance_cards(target, target_entry))
+                continue
+            if not self.runner.attached(entry["id"]):
+                # A runtime is rebuilt on every server start and the
+                # runner has no persisted attachment. Rebind enabled
+                # plugins here so a restart cannot leave a fresh card
+                # with no payload (it used to read "reading the data
+                # source" forever). Verify the pin first: a tampered
+                # tree must never execute.
+                try:
+                    self._verify_installed(entry)
+                except PluginError as exc:
+                    # A tampered tree never executes: the card says so and
+                    # carries no payload from it.
+                    cards.append(attention_card(
+                        plugin_id, "main", card_id=entry["id"],
+                        title=entry.get("name", entry["id"]),
+                        version=entry.get("active_version", ""),
+                        pilot=entry.get("pilot_views_left", 0) > 0,
+                        state=entry["state"], cause=str(exc),
+                        manifest=manifest))
+                    continue
+                self._attach_runner(entry["id"], entry)
+            if self.runner.attached(entry["id"]):
+                # One source read for both halves of the card (#75
+                # review): status and payload come from a single
+                # status+bindings pass, so a pipeline-backed source (the
+                # mail folder included) is read once per view.
+                card = self.runner.card(entry["id"])
+                data, payload = card["status"], card["payload"]
+            else:
+                data = entry.get("data_source") or {}
+                payload = None
+            cards.append(widget_card(
+                plugin_id, "main", title=entry.get("name", entry["id"]),
+                version=entry["active_version"],
+                pilot=entry["pilot_views_left"] > 0, state=entry["state"],
+                data=data, payload=payload, manifest=manifest))
+        return cards
+
+    def record_dashboard_view(self) -> int:
+        """Spend one pilot view per plugin target a dashboard view showed.
+
+        Shares the emission spine with widget_cards (emission_targets), so
+        the two cannot drift: disabled plugins, plugins without an
+        installed version and a tampered tree that fails verification
+        spend nothing, and an alias or instance-capable plugin spends for
+        its target. Returns the number of pilot views spent; the plugin
+        store is written once, and only when a count actually changed,
+        so a view after the pilot has run out leaves the file untouched.
+        """
+        state = self._read()
+        dirty = False
+        spent = 0
+        for entry, _manifest, _config, _target, folds in self.emission_targets(
+                state, self._active_manifest):
+            plugin_id = entry["id"]
+            if folds:
+                if entry["pilot_views_left"] > 0:
+                    entry["pilot_views_left"] -= 1
+                    dirty = True
+                    spent += 1
+                continue
+            if not self.runner.attached(plugin_id):
+                try:
+                    self._verify_installed(entry)
+                except PluginError:
+                    # widget_cards emits the tampered card without spending.
+                    continue
+                self._attach_runner(plugin_id, entry)
+            if entry["pilot_views_left"] > 0:
+                entry["pilot_views_left"] -= 1
+                dirty = True
+                spent += 1
+        if dirty:
+            self._write(state)
+        return spent
+
+    def widget_payload(self, plugin_id: str) -> dict | None:
+        """The bound ui-schema render model for one plugin, or None."""
+        entry = self._entry(self._read(), plugin_id)
+        self._verify_installed(entry)
+        return self.runner.payload(plugin_id) if self.runner.attached(plugin_id) else None
+
+    def start_widget_polls(self) -> None:
+        """Resume hourly polling for every attached data source."""
+        self.runner.start_all_polling()

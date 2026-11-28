@@ -20,8 +20,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.extract import (
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.extract import (
     ENTITY_TYPES,
     EXTRACTION_SYSTEM_PROMPT,
     EndpointExtractor,
@@ -37,7 +37,7 @@ from agentdesk.memory.extract import (
     source_names_occurrence,
     strip_think_blocks,
 )
-from agentdesk.memory.knowledge_gap import is_assistant_knowledge_gap
+from nexuusbot.memory.knowledge_gap import is_assistant_knowledge_gap
 
 
 # -- the donor prompt rides verbatim ---------------------------------------
@@ -150,7 +150,7 @@ def test_parse_refuses_a_non_string_payload_shape():
 
 
 def _normalize(value):
-    from agentdesk.memory.extract import normalize_extracted_facts
+    from nexuusbot.memory.extract import normalize_extracted_facts
 
     return normalize_extracted_facts(value)
 

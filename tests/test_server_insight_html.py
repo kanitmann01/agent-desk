@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentdesk.insight import service
-from agentdesk.insight.types import InsightContext, InsightReading
-from agentdesk.server import app
+from nexuusbot.insight import service
+from nexuusbot.insight.types import InsightContext, InsightReading
+from nexuusbot.server import app
 
 
 def _widget_card(elements: list[dict]) -> dict:

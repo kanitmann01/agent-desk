@@ -18,9 +18,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.excel import store
-from agentdesk.excel.core import WorkbookLocked, WorkbookUnreadable
-from agentdesk.excel.watcher import Adapters, ExcelWatch
+from nexuusbot.excel import store
+from nexuusbot.excel.core import WorkbookLocked, WorkbookUnreadable
+from nexuusbot.excel.watcher import Adapters, ExcelWatch
 
 BASE = [["Product", "Units"], ["Atlas", 41.0], ["Field", 12.0]]
 CHANGED = [["Product", "Units"], ["Atlas", 44.0], ["Field", 12.0], ["Care", 7.0]]
@@ -261,8 +261,8 @@ def test_a_read_only_workbook_polls_twice_without_locking(tmp_path):
     import stat
 
     from excel_fixtures import base_workbook
-    from agentdesk.excel.shadow import copy_to_shadow
-    from agentdesk.excel.xlsx import parse_workbook_file
+    from nexuusbot.excel.shadow import copy_to_shadow
+    from nexuusbot.excel.xlsx import parse_workbook_file
 
     src = tmp_path / "Q4-sales.xlsx"
     src.write_bytes(base_workbook())
@@ -283,7 +283,7 @@ def test_snapshots_prune_after_seven_days():
     """Nothing reads a snapshot older than the 24-hour reference, so a
     poll keeps only seven days of its own history and the table stops
     growing forever."""
-    from agentdesk.excel.core import row_hash
+    from nexuusbot.excel.core import row_hash
 
     conn = sqlite3.connect(":memory:")
     store.ensure_schema(conn)
@@ -304,8 +304,8 @@ def test_snapshots_prune_after_seven_days():
 def test_the_shadow_copy_exists_for_the_parse_and_is_removed_after_the_poll(tmp_path):
     """The copy lives exactly as long as the poll needs it: present for
     the parse, gone when the poll ends, so temp never accumulates."""
-    from agentdesk.excel.shadow import SHADOW_DIRNAME, copy_to_shadow
-    from agentdesk.excel.xlsx import parse_workbook_file
+    from nexuusbot.excel.shadow import SHADOW_DIRNAME, copy_to_shadow
+    from nexuusbot.excel.xlsx import parse_workbook_file
     from excel_fixtures import base_workbook
 
     src = tmp_path / "Q4-sales.xlsx"

@@ -23,9 +23,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server import app as server_app
+from nexuusbot.server import app as server_app
 
-COMMITTED_SPA_DIR = ROOT / "src" / "agentdesk" / "server" / "static" / "spa"
+COMMITTED_SPA_DIR = ROOT / "src" / "nexuusbot" / "server" / "static" / "spa"
 
 # What Vite emits for the shell: one external module script, one external
 # stylesheet, nothing inline, nothing remote.
@@ -252,6 +252,6 @@ def test_the_server_theme_boot_matches_the_spa_copy():
     # script; the two copies must not drift.
     from pathlib import Path
 
-    from agentdesk.server import pages
+    from nexuusbot.server import pages
     spa_copy = Path(__file__).resolve().parents[1] / "frontend" / "public" / "theme-boot.js"
     assert pages.THEME_BOOT_JS == spa_copy.read_text(encoding="utf-8")

@@ -22,8 +22,8 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.plugins.execute import PluginWidgetRunner  # noqa: E402
-from agentdesk.plugins.refresh import ReadingStore  # noqa: E402
+from nexuusbot.plugins.execute import PluginWidgetRunner  # noqa: E402
+from nexuusbot.plugins.refresh import ReadingStore  # noqa: E402
 
 
 def _manifest(events: list) -> dict:

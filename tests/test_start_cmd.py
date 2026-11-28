@@ -32,7 +32,7 @@ def test_start_cmd_delegates_the_double_click_path():
 def test_start_cmd_dev_branch_starts_both_processes():
     text = cmd_text()
     assert "dev" in text
-    assert "agentdesk.server --port 8765" in text
+    assert "nexuusbot.server --port 8765" in text
     assert "npm --prefix" in text
     assert "run dev" in text
 

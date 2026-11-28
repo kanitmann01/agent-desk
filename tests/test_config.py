@@ -17,7 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.config import load_env_file, parse_env_file
+from nexuusbot.config import load_env_file, parse_env_file
 
 
 def test_parses_simple_key_value_lines():

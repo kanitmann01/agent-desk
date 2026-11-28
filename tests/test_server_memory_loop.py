@@ -15,8 +15,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.settings import SettingsStore
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.settings import SettingsStore
 
 
 class ReplyLlm:
@@ -87,7 +87,7 @@ def test_a_transient_memory_failure_reads_as_no_facts_on_the_assistant(env, auth
         raise sqlite3.OperationalError("database is locked")
 
     env.server.memory.recall = locked
-    with caplog.at_level(logging.WARNING, logger="agentdesk.server"):
+    with caplog.at_level(logging.WARNING, logger="nexuusbot.server"):
         _ask(env, auth, "what is the revenue?")
     assert any("could not be read just now" in record.getMessage()
                for record in caplog.records)
@@ -172,7 +172,7 @@ def _add(env, auth, text):
 
 def test_remove_preview_remove_and_undo(env, auth):
     memory = env.server.memory
-    from agentdesk.memory import loop
+    from nexuusbot.memory import loop
     a = loop.store_fact(memory, "Priya Shah owns the Acme Corp renewal.", source="page",
                         entities=[("Acme Corp", "org"), ("Priya Shah", "person")]).fact
     loop.store_fact(memory, "Acme Corp signed for three years.", source="page",
@@ -231,7 +231,7 @@ def test_removing_an_excerpt_also_rejects_its_waiting_cards(env, auth):
 
 
 def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth, monkeypatch):
-    from agentdesk.server import memory_api as app_module
+    from nexuusbot.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: True)
     status, _h, body = env.request("GET", "/memory", auth)
     page = body.decode()
@@ -255,7 +255,7 @@ def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth,
 
 
 def test_without_the_build_the_memory_page_stays_server_rendered(env, auth, monkeypatch):
-    from agentdesk.server import memory_api as app_module
+    from nexuusbot.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
     _s, _h, body = env.request("GET", "/memory", auth)
     page = body.decode()
@@ -309,7 +309,7 @@ def test_the_graph_names_the_entity_first_on_its_observation(env, auth):
 
 
 def test_a_changed_workbook_row_is_captured_for_review(env, auth):
-    from agentdesk.excel.core import Delta
+    from nexuusbot.excel.core import Delta
     hook = env.server.excel.change_hook
     hook("tracker.xlsx", ["Deal", "Stage", "Owner"],
          Delta(added=[["Harborlight Freight", "Legal", "Jordan Lee"]],

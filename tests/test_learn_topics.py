@@ -23,14 +23,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.agentloop import STEPS
-from agentdesk.insight.preferences import PreferenceStore
-from agentdesk.ledger.store import Ledger, LedgerError
-from agentdesk.memory import profile
-from agentdesk.memory.store import MemoryStore
-from agentdesk.repetition.activity import ActivityLog
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore
+from nexuusbot.agentloop import STEPS
+from nexuusbot.insight.preferences import PreferenceStore
+from nexuusbot.ledger.store import Ledger, LedgerError
+from nexuusbot.memory import profile
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.repetition.activity import ActivityLog
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore
 
 ASK = "summarise the Kestrel Foods order history"
 
@@ -74,7 +74,7 @@ def _ledger_bundle():
     ledger = Ledger(":memory:")
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     audit = sqlite3.connect(":memory:", check_same_thread=False)
-    from agentdesk.assistant import audit as audit_store
+    from nexuusbot.assistant import audit as audit_store
     audit_store.ensure_schema(audit)
     return ledger, settings, audit
 

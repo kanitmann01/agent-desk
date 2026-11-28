@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.peers.discovery import DiscoveryService  # noqa: E402
+from nexuusbot.peers.discovery import DiscoveryService  # noqa: E402
 
 
 def free_udp_port() -> int:

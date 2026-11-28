@@ -18,9 +18,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.service import evaluate
-from agentdesk.inbox.snooze import SNOOZE_TOMORROW, snooze_until
-from agentdesk.inbox.store import InboxStore
+from nexuusbot.inbox.service import evaluate
+from nexuusbot.inbox.snooze import SNOOZE_TOMORROW, snooze_until
+from nexuusbot.inbox.store import InboxStore
 
 MORNING = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 

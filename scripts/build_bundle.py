@@ -57,14 +57,14 @@ def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
 def _app_version(root: Path) -> str:
     """The product version the bundle is stamped with.
 
-    Read from pyproject.toml, then src/agentdesk/__init__.py, then "0.0.0": an
+    Read from pyproject.toml, then src/nexuusbot/__init__.py, then "0.0.0": an
     unversioned build still gets a manifest.
     """
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
     if match:
         return match.group(1)
-    init = (root / "src" / "agentdesk" / "__init__.py").read_text(encoding="utf-8")
+    init = (root / "src" / "nexuusbot" / "__init__.py").read_text(encoding="utf-8")
     match = re.search(r'__version__\s*=\s*"([^"]+)"', init)
     return match.group(1) if match else "0.0.0"
 
@@ -110,8 +110,8 @@ def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
         "nuitka",
         "--standalone",
         "--enable-plugin=no-qt",
-        "--include-package=agentdesk",
-        "--include-data-dir=src/agentdesk/server/static=agentdesk/server/static",
+        "--include-package=nexuusbot",
+        "--include-data-dir=src/nexuusbot/server/static=nexuusbot/server/static",
         "--nofollow-import-to=tests",
         "--nofollow-import-to=pytest",
         "--output-dir=build/nuitka",
@@ -273,7 +273,7 @@ def _manifest(
             "sbom_sha256": _sha256(sbom_path),
         },
         "frontend": {
-            "source": "src/agentdesk/server/static/spa",
+            "source": "src/nexuusbot/server/static/spa",
             "files": static_count,
             "index_sha256": static_index_sha,
             "note": "committed Vite bundle; no node needed at runtime",
@@ -301,7 +301,7 @@ def build(args: argparse.Namespace) -> int:
     """
     root = REPO_ROOT
     output = args.output.resolve()
-    static = root / "src" / "agentdesk" / "server" / "static" / "spa"
+    static = root / "src" / "nexuusbot" / "server" / "static" / "spa"
     index = static / "index.html"
     if not index.is_file():
         print(

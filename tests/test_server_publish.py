@@ -106,16 +106,16 @@ def test_publish_loop_end_to_end(tmp_path):
         assert json.loads(body)["error"] == "publish:already-exists"
 
         # The audit row landed.
-        from agentdesk.assistant import audit as audit_store
+        from nexuusbot.assistant import audit as audit_store
         rows = audit_store.entries(booted.server.audit_conn, limit=50)
         published = [r for r in rows if r["action"] == "registry.publish"]
         assert published and published[0]["target"] == PLUGIN_ID
 
         # A second, fresh runtime installs it by id@version from the
         # mutated registry root: the registry bridge end to end.
-        from agentdesk.plugins.runtime import PluginRuntime
-        from agentdesk.registry import source as registry_source
-        from agentdesk.registry.install import read_lock
+        from nexuusbot.plugins.runtime import PluginRuntime
+        from nexuusbot.registry import source as registry_source
+        from nexuusbot.registry.install import read_lock
 
         fresh = tmp_path / "fresh-desk"
         runtime = PluginRuntime(plugins_dir=fresh / "plugins",
@@ -250,7 +250,7 @@ def test_wizard_approved_screen_offers_publish(tmp_path):
     import sqlite3
     from datetime import datetime
 
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     registry = make_registry(tmp_path)
     clock = _FakeClock(datetime(2026, 11, 11, 9, 0, 0).astimezone().timestamp())

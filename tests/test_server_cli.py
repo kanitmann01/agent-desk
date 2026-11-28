@@ -13,8 +13,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk import config
-from agentdesk.server import cli
+from nexuusbot import config
+from nexuusbot.server import cli
 
 
 def _no_personal_config(monkeypatch, tmp_path):

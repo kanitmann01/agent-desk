@@ -14,9 +14,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.presentations.fit import fit_outline, slot_budget
-from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
-from agentdesk.presentations.writer import content_point_size, slide_texts
+from nexuusbot.presentations.fit import fit_outline, slot_budget
+from nexuusbot.presentations.ooxml import build_shell, pack_zip, read_parts
+from nexuusbot.presentations.writer import content_point_size, slide_texts
 
 RECIPE = json.loads(
     (ROOT / "registry/plugins/presentation-starter/recipes/briefing.json").read_text(encoding="utf-8")
@@ -48,7 +48,7 @@ def test_a_bullet_that_wraps_stays_one_bullet_and_continuations_loop():
 
 def _bullet_ok(bullets: list[str]) -> bool:
     """True when this slide's bullets use no more lines than the box."""
-    from agentdesk.presentations.fit import _bullet_lines, slot_budget
+    from nexuusbot.presentations.fit import _bullet_lines, slot_budget
     budget = slot_budget([0.9, 1.7, 11.5, 4.6], 14)
     used = sum(_bullet_lines(bullet, budget["charsPerLine"]) for bullet in bullets)
     return used <= budget["lines"]

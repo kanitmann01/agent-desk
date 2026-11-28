@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import server_harness  # noqa: E402
-from agentdesk.server import settings_view  # noqa: E402
+from nexuusbot.server import settings_view  # noqa: E402
 
 CARD_OPEN = "<section class='card settings-card' id='preferences'>"
 

@@ -55,7 +55,7 @@ class FakeClock:
 
 
 def make_runtime(tmp_path):
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     return PluginRuntime(
         plugins_dir=tmp_path / "plugins",
@@ -80,7 +80,7 @@ def walk(tmp_path, monkeypatch):
     folder, and a fake picker that opens the fixture workbook."""
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
-    from agentdesk.wizard.core import WizardStore
+    from nexuusbot.wizard.core import WizardStore
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

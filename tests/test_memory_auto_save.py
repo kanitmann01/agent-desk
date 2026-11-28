@@ -20,8 +20,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.store import SCHEMA as INBOX_SCHEMA
-from agentdesk.settings import SettingsStore
+from nexuusbot.inbox.store import SCHEMA as INBOX_SCHEMA
+from nexuusbot.settings import SettingsStore
 
 
 class ReplyLlm:

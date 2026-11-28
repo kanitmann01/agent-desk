@@ -41,7 +41,7 @@ def main() -> int:
                                      ignore_cleanup_errors=True) as tmp:
         os.environ["AGENTDESK_DATA"] = tmp
         # Import late: the data dir must be set first.
-        from agentdesk.server import app as server_app
+        from nexuusbot.server import app as server_app
 
         reports = Path(tmp) / "workspace" / "reports"
         reports.mkdir(parents=True)

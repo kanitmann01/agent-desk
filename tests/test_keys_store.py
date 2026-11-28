@@ -18,8 +18,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.keys.store import KeysStore, UnknownConnection, mask_key
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.keys.store import KeysStore, UnknownConnection, mask_key
 
 # The connections table exactly as the builds before spec 022 wrote it,
 # without the model column: the shape of a keys.sqlite3 such a build left.

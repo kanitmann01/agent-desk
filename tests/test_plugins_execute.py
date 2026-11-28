@@ -22,11 +22,11 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.excel.core import WorkbookLocked  # noqa: E402
-from agentdesk.excel.watcher import Adapters  # noqa: E402
-from agentdesk.plugins.execute import PluginWidgetRunner  # noqa: E402
-from agentdesk.plugins.render import PluginRenderError  # noqa: E402
-from agentdesk.plugins.runtime import PluginRuntime  # noqa: E402
+from nexuusbot.excel.core import WorkbookLocked  # noqa: E402
+from nexuusbot.excel.watcher import Adapters  # noqa: E402
+from nexuusbot.plugins.execute import PluginWidgetRunner  # noqa: E402
+from nexuusbot.plugins.render import PluginRenderError  # noqa: E402
+from nexuusbot.plugins.runtime import PluginRuntime  # noqa: E402
 from plugins_fixtures import valid_zip  # noqa: E402
 
 DAY = 24 * 60 * 60.0
@@ -338,8 +338,8 @@ def _bridge(tmp_path, now, events, llm=None):
     events=None seeds no file at all: the bridge's empty state."""
     import sqlite3
 
-    from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-    from agentdesk.calendar.watcher import CalendarBridge
+    from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+    from nexuusbot.calendar.watcher import CalendarBridge
 
     def read_calendar():
         if events is None:
@@ -566,11 +566,11 @@ def _mail_runner(workspace, tmp_path, now_ts: float, files: dict,
                  folder=lambda: ""):
     import sqlite3
 
-    from agentdesk.inbox.store import InboxStore
-    from agentdesk.mail.core import read_eml_folder_reported
-    from agentdesk.mail.store import MailStore
-    from agentdesk.mail.watcher import Adapters as MailAdapters
-    from agentdesk.mail.watcher import MailWatch
+    from nexuusbot.inbox.store import InboxStore
+    from nexuusbot.mail.core import read_eml_folder_reported
+    from nexuusbot.mail.store import MailStore
+    from nexuusbot.mail.watcher import Adapters as MailAdapters
+    from nexuusbot.mail.watcher import MailWatch
 
     folder_path = tmp_path / "mail"
     folder_path.mkdir(exist_ok=True)
@@ -634,8 +634,8 @@ def test_mail_digest_payload_carries_no_body_field(workspace, tmp_path):
     name, and a card asking for one renders nothing for it."""
     from dataclasses import fields
 
-    from agentdesk.mail.core import Message
-    from agentdesk.plugins.execute import BINDINGS
+    from nexuusbot.mail.core import Message
+    from nexuusbot.plugins.execute import BINDINGS
 
     assert "body" not in {f.name for f in fields(Message)}
     assert not any("body" in name.lower() for name in BINDINGS)
@@ -803,7 +803,7 @@ RESEARCH_WINDOW_NOTE = ("The latest stored research answer; showing it "
 def _research_store(now_ts: float, answer=None):
     import sqlite3
 
-    from agentdesk.assistant.research_store import ResearchStore
+    from nexuusbot.assistant.research_store import ResearchStore
 
     store = ResearchStore(
         sqlite3.connect(":memory:", check_same_thread=False),
@@ -893,11 +893,11 @@ def test_dashboard_build_reads_the_mail_folder_once(workspace, tmp_path):
     view, not once per half."""
     import sqlite3
 
-    from agentdesk.inbox.store import InboxStore
-    from agentdesk.mail.core import read_eml_folder_reported
-    from agentdesk.mail.store import MailStore
-    from agentdesk.mail.watcher import Adapters as MailAdapters
-    from agentdesk.mail.watcher import MailWatch
+    from nexuusbot.inbox.store import InboxStore
+    from nexuusbot.mail.core import read_eml_folder_reported
+    from nexuusbot.mail.store import MailStore
+    from nexuusbot.mail.watcher import Adapters as MailAdapters
+    from nexuusbot.mail.watcher import MailWatch
 
     now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
     folder = tmp_path / "mail"

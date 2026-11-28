@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.memory.core import Fact
-from agentdesk.recommend.rules import Candidate, deadline_candidates
-from agentdesk.server.demo_data import SAMPLE_MEMORY_SOURCE
+from nexuusbot.memory.core import Fact
+from nexuusbot.recommend.rules import Candidate, deadline_candidates
+from nexuusbot.server.demo_data import SAMPLE_MEMORY_SOURCE
 
 NOV_20 = datetime(2026, 11, 20, 9, 0)
 

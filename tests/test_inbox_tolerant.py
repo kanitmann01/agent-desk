@@ -21,8 +21,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.core import UnknownCard
-from agentdesk.inbox.store import InboxStore
+from nexuusbot.inbox.core import UnknownCard
+from nexuusbot.inbox.store import InboxStore
 
 NOW = 1700000000.0
 
@@ -79,7 +79,7 @@ def test_unreadable_row_is_logged_once_per_id(tmp_path, caplog):
     store = make_store(tmp_path)
     raw_id = insert_raw(store)
 
-    with caplog.at_level(logging.WARNING, logger="agentdesk.inbox.store"):
+    with caplog.at_level(logging.WARNING, logger="nexuusbot.inbox.store"):
         store.waiting()
         store.all_cards()
         store.waiting()

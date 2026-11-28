@@ -20,15 +20,15 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.keys.resolve import (
+from nexuusbot.keys.resolve import (
     NO_AI_KEY,
     JOBS,
     JOB_LABELS,
     JobUnbound,
     resolve_job,
 )
-from agentdesk.keys.store import JobBinding, KeysStore
-from agentdesk.llm import DEFAULT_MODEL
+from nexuusbot.keys.store import JobBinding, KeysStore
+from nexuusbot.llm import DEFAULT_MODEL
 
 ENV = ("https://env.example/v1", "env-key", "env-model")
 
@@ -287,7 +287,7 @@ def test_the_default_env_leg_is_the_adapters_own_triple():
     """With no env handed in, the resolver reads the adapter's
     env_config itself, so the hub and the adapter can never disagree
     about what the environment says."""
-    from agentdesk.keys import resolve as resolve_module
+    from nexuusbot.keys import resolve as resolve_module
 
     captured = {}
     original = resolve_module.env_config

@@ -3,7 +3,7 @@
 The ten kinds, their direction and tone words, and every cap used to live in
 five places: the renderer, the permission lint, the server's no-JS helper,
 the SPA's ElementView and the marketplace sample renderer. The host now owns
-them in agentdesk.plugins.vocabulary and the SPA's copy is generated from it,
+them in nexuusbot.plugins.vocabulary and the SPA's copy is generated from it,
 so these tests pin the importers to the same objects and prove the one
 no-JS renderer draws every kind.
 """
@@ -18,10 +18,10 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.plugins import html as element_html  # noqa: E402
-from agentdesk.plugins import render, vocabulary  # noqa: E402
-from agentdesk.server import app  # noqa: E402
-from agentdesk.validator import lint  # noqa: E402
+from nexuusbot.plugins import html as element_html  # noqa: E402
+from nexuusbot.plugins import render, vocabulary  # noqa: E402
+from nexuusbot.server import app  # noqa: E402
+from nexuusbot.validator import lint  # noqa: E402
 
 # One representative element per kind, in the contract's order. Each carries
 # the piece of untrusted text the escaping assertions look for.

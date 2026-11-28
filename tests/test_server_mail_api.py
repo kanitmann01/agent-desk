@@ -25,12 +25,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 import server_harness
-from agentdesk.inbox.store import InboxStore
-from agentdesk.mail.core import read_eml_folder_reported
-from agentdesk.mail.store import MailStore
-from agentdesk.mail.watcher import Adapters, MailWatch
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.mail.core import read_eml_folder_reported
+from nexuusbot.mail.store import MailStore
+from nexuusbot.mail.watcher import Adapters, MailWatch
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mail"
 
@@ -506,7 +506,7 @@ def test_mail_folder_save_via_form_redirects_back_to_settings(env, auth):
 
 
 def _audit_entries(env):
-    from agentdesk.assistant import audit as audit_store
+    from nexuusbot.assistant import audit as audit_store
     return audit_store.entries(env.server.audit_conn, 100)
 
 

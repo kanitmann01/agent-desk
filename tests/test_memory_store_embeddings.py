@@ -25,14 +25,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.crypto import CryptoBox  # noqa: F401 - the byte envelope seam
-from agentdesk.memory.embed import (
+from nexuusbot.memory.crypto import CryptoBox  # noqa: F401 - the byte envelope seam
+from nexuusbot.memory.embed import (
     EmbedderUnavailable,
     decode_embedding,
     encode_embedding,
 )
-from agentdesk.memory.hybrid import rank_hybrid
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.memory.hybrid import rank_hybrid
+from nexuusbot.memory.store import MemoryStore
 
 
 class FakeClock:

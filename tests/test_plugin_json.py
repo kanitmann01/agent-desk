@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from agentdesk.plugins.config import ConfigError, InstanceStore
-from agentdesk.plugins.preview import preview_table
-from agentdesk.plugins.tracker import read_tracker
+from nexuusbot.plugins.config import ConfigError, InstanceStore
+from nexuusbot.plugins.preview import preview_table
+from nexuusbot.plugins.tracker import read_tracker
 
 
 def _write(path, payload):

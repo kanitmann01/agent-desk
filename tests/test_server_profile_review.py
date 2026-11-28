@@ -25,7 +25,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server import app as server_app
+from nexuusbot.server import app as server_app
 
 LINE = "Owns the Harborlight Freight and Kestrel Foods accounts."
 ASK = "summarise the Harborlight Freight order history"

@@ -11,8 +11,8 @@ import sqlite3
 import zipfile
 
 import server_harness
-from agentdesk import update
-from agentdesk.update import stage
+from nexuusbot import update
+from nexuusbot.update import stage
 
 EXE = "AgentDesk.exe"
 
@@ -276,7 +276,7 @@ def test_undo_applied_rolls_back(tmp_path, monkeypatch):
 
 def test_no_network_in_update_package():
     """The update package is file-share code; it has no network client."""
-    import agentdesk.update as package
+    import nexuusbot.update as package
 
     root = package.__path__[0]
     forbidden = ("urllib", "http.client", "socket", "requests", "httpx")

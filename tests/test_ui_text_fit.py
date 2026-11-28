@@ -31,8 +31,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server import pages
-from agentdesk.server.commitments import render_commitments_widget
+from nexuusbot.server import pages
+from nexuusbot.server.commitments import render_commitments_widget
 
 
 @pytest.fixture()
@@ -274,7 +274,7 @@ def test_the_server_sheet_mirrors_the_spa_timeline_contract():
 
 
 def test_a_fresh_plugin_card_draws_the_timeline_classes():
-    from agentdesk.server.app import DashboardHandler
+    from nexuusbot.server.app import DashboardHandler
 
     card = {
         "id": "timeline-plugin",
@@ -299,7 +299,7 @@ def test_a_fresh_plugin_card_draws_the_timeline_classes():
 
 
 def test_a_plugin_table_rides_in_a_scroller_with_breaking_cells():
-    from agentdesk.plugins.html import element_html
+    from nexuusbot.plugins.html import element_html
 
     markup = element_html({
         "kind": "table",
@@ -330,7 +330,7 @@ class _LedgerEntry:
 
 
 def test_every_server_table_rides_in_a_scroll_wrapper(booted):
-    from agentdesk.server import audit_view, settings_view
+    from nexuusbot.server import audit_view, settings_view
 
     assert "<div class='table-scroll'><table class='rows touches'>" in _get(
         booted, "/what-this-touches"
@@ -400,7 +400,7 @@ def test_every_rendered_page_wraps_every_rows_table(booted):
 
 
 def test_the_sales_examples_table_rides_in_a_wrapper():
-    from agentdesk.server.sales import render_sales_widget
+    from nexuusbot.server.sales import render_sales_widget
 
     widget = render_sales_widget({
         "state": "healthy",
@@ -416,7 +416,7 @@ def test_the_sales_examples_table_rides_in_a_wrapper():
 # -- A4: the legacy plugin card offers a re-test only when it can work ----
 
 def test_the_legacy_plugin_card_offers_retest_only_when_it_can_change():
-    from agentdesk.server import app as server_app
+    from nexuusbot.server import app as server_app
 
     base = {
         "id": "sample-plugin", "title": "Sample plugin", "version": "1.0.0",
@@ -441,7 +441,7 @@ def test_the_legacy_plugin_card_offers_retest_only_when_it_can_change():
 
 
 def test_a_stale_source_is_stamped_stale_not_live():
-    from agentdesk.server import app as server_app
+    from nexuusbot.server import app as server_app
 
     card = {
         "id": "audit-overflow", "title": "Regional Pipeline", "version": "0.1.0",
@@ -547,7 +547,7 @@ def test_a_plugin_with_no_widget_keeps_no_card_but_stays_installed(booted):
 
 
 def test_the_card_filter_keeps_setup_cards():
-    from agentdesk.server.dashboard_state import dashboard_plugin_cards
+    from nexuusbot.server.dashboard_state import dashboard_plugin_cards
 
     no_widget = {
         "id": "empty",
@@ -564,7 +564,7 @@ def test_the_card_filter_keeps_setup_cards():
 
 
 def test_a_runner_that_never_ran_claims_no_checked_at(tmp_path):
-    from agentdesk.plugins.execute import PluginWidgetRunner
+    from nexuusbot.plugins.execute import PluginWidgetRunner
 
     runner = PluginWidgetRunner(tmp_path / "workspace")
     status = runner.status("never-attached")
@@ -575,7 +575,7 @@ def test_a_runner_that_never_ran_claims_no_checked_at(tmp_path):
 # -- C3: reader language for causes ---------------------------------------
 
 def test_the_no_transport_cause_speaks_reader_language(tmp_path):
-    from agentdesk.plugins.sources import SourceContext, read_source
+    from nexuusbot.plugins.sources import SourceContext, read_source
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -600,7 +600,7 @@ def test_the_no_transport_cause_speaks_reader_language(tmp_path):
 
 
 def test_a_plugin_with_no_widget_speaks_reader_language(tmp_path):
-    from agentdesk.plugins.execute import PluginWidgetRunner
+    from nexuusbot.plugins.execute import PluginWidgetRunner
 
     runner = PluginWidgetRunner(tmp_path / "workspace")
     status = runner.attach(
@@ -616,8 +616,8 @@ def test_a_plugin_with_no_widget_speaks_reader_language(tmp_path):
 # -- C4 and C5: marketplace transport and desk health ---------------------
 
 def test_the_marketplace_payloads_report_the_desk_transport(booted, tmp_path):
-    from agentdesk.plugins.execute import PluginWidgetRunner
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.execute import PluginWidgetRunner
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     headers = booted.exchange()
 
@@ -648,7 +648,7 @@ def test_the_marketplace_payloads_report_the_desk_transport(booted, tmp_path):
 
 
 def test_desk_health_counts_only_the_three_desk_sources(booted):
-    from agentdesk.server.core import SOURCE_IDS
+    from nexuusbot.server.core import SOURCE_IDS
 
     headers = booted.exchange()
     payload = json.loads(booted.request("GET", "/api/dashboard", headers)[2])

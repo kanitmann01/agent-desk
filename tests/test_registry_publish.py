@@ -53,7 +53,7 @@ def bare_registry(tmp_path: Path) -> Path:
 
 
 def publish(root: Path, plugin_id: str, version: str, source: Path):
-    from agentdesk.registry.publish import publish_to_registry
+    from nexuusbot.registry.publish import publish_to_registry
     return publish_to_registry(root, plugin_id, version=version,
                                source_dir=source)
 
@@ -76,7 +76,7 @@ def test_publish_lands_a_local_release_pinned_by_digest(tmp_path):
     assert out["sha256"] == tree_digest(landed)
     assert out["sha256"] == tree_digest(source)
 
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     index = load_index((root / "index.json").read_text(encoding="utf-8"))
     entry = index.plugin("team-notes-widget")
     assert entry is not None
@@ -93,7 +93,7 @@ def test_published_index_round_trips_byte_faithfully(tmp_path):
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
     publish(root, "team-notes-widget", "0.1.0", source)
 
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     raw = (root / "index.json").read_text(encoding="utf-8")
     index = load_index(raw)
     assert json.loads(index.to_json()) == json.loads(raw)
@@ -107,7 +107,7 @@ def test_local_release_installs_end_to_end_without_git(tmp_path):
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
     published = publish(root, "team-notes-widget", "0.1.0", source)
 
-    from agentdesk.registry.install import install_from_registry, read_lock
+    from nexuusbot.registry.install import install_from_registry, read_lock
     out = install_from_registry(root, "team-notes-widget", version="0.1.0",
                                 destination=tmp_path / "client")
     assert out["ok"] is True
@@ -131,7 +131,7 @@ def test_tampered_local_release_refuses_on_hash(tmp_path):
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n",
                              encoding="utf-8")
 
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
         install_from_registry(root, "team-notes-widget", version="0.1.0",
                               destination=tmp_path / "client")
@@ -144,7 +144,7 @@ def test_missing_plugins_dir_refuses_with_named_error(tmp_path):
     publish(root, "team-notes-widget", "0.1.0", source)
     shutil.rmtree(root / "plugins" / "team-notes-widget" / "0.1.0")
 
-    from agentdesk.registry.install import RegistryError, install_from_registry
+    from nexuusbot.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
         install_from_registry(root, "team-notes-widget", version="0.1.0",
                               destination=tmp_path / "client")
@@ -156,15 +156,15 @@ def test_duplicate_id_and_version_is_refused(tmp_path):
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
     publish(root, "team-notes-widget", "0.1.0", source)
     # Even identical content: the pin already exists.
-    from agentdesk.registry.publish import RegistryError
+    from nexuusbot.registry.publish import RegistryError
     with pytest.raises(RegistryError) as excinfo:
         publish(root, "team-notes-widget", "0.1.0", source)
     assert excinfo.value.code == "publish:already-exists"
 
 
 def test_new_version_appends_cleanly_and_ci_stays_green(tmp_path):
-    from agentdesk.registry.ci import review_registry_changes
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.ci import review_registry_changes
+    from nexuusbot.registry.index import load_index
 
     root = bare_registry(tmp_path)
     first = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
@@ -208,7 +208,7 @@ def test_publishing_a_new_version_keeps_earlier_local_releases(tmp_path):
             / "manifest.json").is_file()
 
     # The old release installs by exact pin and hash-verifies.
-    from agentdesk.registry.install import install_from_registry
+    from nexuusbot.registry.install import install_from_registry
     out = install_from_registry(root, "team-notes-widget", version="0.1.0",
                                 sha256=published_1["sha256"],
                                 destination=tmp_path / "client")
@@ -229,7 +229,7 @@ def test_publishing_an_older_version_keeps_latest(tmp_path):
     """The P2 review fix, pinned: publishing an older version (say after
     a rollback) appends history without dragging latest, and therefore
     unpinned installs, backwards."""
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
 
     root = bare_registry(tmp_path)
     publish(root, "team-notes-widget", "0.1.0",
@@ -245,7 +245,7 @@ def test_publishing_an_older_version_keeps_latest(tmp_path):
     assert entry.latest == "0.2.0"
 
     # Unpinned resolution follows latest, not the last append.
-    from agentdesk.registry.source import stage_registry_install
+    from nexuusbot.registry.source import stage_registry_install
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         staged = stage_registry_install(root, "team-notes-widget",
@@ -255,7 +255,7 @@ def test_publishing_an_older_version_keeps_latest(tmp_path):
 
 def test_latest_advances_by_numeric_compare_not_lexical(tmp_path):
     """0.10.0 is newer than 0.9.0; a string compare would say otherwise."""
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
 
     root = bare_registry(tmp_path)
     publish(root, "team-notes-widget", "0.9.0",
@@ -280,13 +280,13 @@ def test_publish_refuses_an_invalid_plugin(tmp_path):
     (source / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n",
                                           encoding="utf-8")
 
-    from agentdesk.registry.publish import RegistryError
+    from nexuusbot.registry.publish import RegistryError
     with pytest.raises(RegistryError) as excinfo:
         publish(root, "team-notes-widget", "0.1.0", source)
     assert excinfo.value.code == "publish:validator-failed"
     # Nothing landed: the registry is untouched.
     assert not (root / "plugins" / "team-notes-widget").exists()
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     assert load_index((root / "index.json").read_text(encoding="utf-8")).plugins == ()
 
 
@@ -294,7 +294,7 @@ def test_publish_refuses_a_manifest_that_disagrees(tmp_path):
     root = bare_registry(tmp_path)
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
 
-    from agentdesk.registry.publish import RegistryError
+    from nexuusbot.registry.publish import RegistryError
     with pytest.raises(RegistryError) as excinfo:
         publish(root, "team-notes-widget", version="9.9.9", source=source)
     assert excinfo.value.code == "publish:manifest-mismatch"
@@ -307,7 +307,7 @@ def test_publish_refuses_unsafe_names(tmp_path):
     root = bare_registry(tmp_path)
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
 
-    from agentdesk.registry.publish import RegistryError
+    from nexuusbot.registry.publish import RegistryError
     with pytest.raises(RegistryError) as excinfo:
         publish(root, "../escape", version="0.1.0", source=source)
     assert excinfo.value.code == "publish:unsafe-name"
@@ -321,15 +321,15 @@ def test_publish_refuses_an_unreadable_index(tmp_path):
     root.mkdir()
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
 
-    from agentdesk.registry.publish import RegistryError
+    from nexuusbot.registry.publish import RegistryError
     with pytest.raises(RegistryError) as excinfo:
         publish(root, "team-notes-widget", "0.1.0", source)
     assert excinfo.value.code == "publish:index-unreadable"
 
 
 def test_publish_root_names_the_three_resolution_sources(monkeypatch):
-    from agentdesk.registry import source as registry_source
-    from agentdesk.registry.publish import RegistryError, resolve_publish_root
+    from nexuusbot.registry import source as registry_source
+    from nexuusbot.registry.publish import RegistryError, resolve_publish_root
 
     monkeypatch.delenv("AGENTDESK_REGISTRY", raising=False)
     monkeypatch.setattr(registry_source, "discover_repo_registry",
@@ -349,8 +349,8 @@ def test_publish_root_names_the_three_resolution_sources(monkeypatch):
 
 
 def test_publish_root_resolves_in_the_sacred_order(tmp_path, monkeypatch):
-    from agentdesk.registry import source as registry_source
-    from agentdesk.registry.publish import resolve_publish_root
+    from nexuusbot.registry import source as registry_source
+    from nexuusbot.registry.publish import resolve_publish_root
 
     monkeypatch.delenv("AGENTDESK_REGISTRY", raising=False)
     by_settings = tmp_path / "by-settings"
@@ -387,7 +387,7 @@ def release_document(**overrides) -> dict:
 
 
 def load_one_release(release: dict):
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     raw = json.dumps({"schemaVersion": 1, "plugins": [
         {"id": "p", "publisher": "pub", "latest": "0.1.0", "risk": "low",
          "class": "declarative", "releases": [release]}]})
@@ -407,20 +407,20 @@ def test_local_release_loads_without_a_tag(tmp_path):
 
 
 def test_tag_release_still_requires_a_tag():
-    from agentdesk.registry.index import RegistryIndexError
+    from nexuusbot.registry.index import RegistryIndexError
     with pytest.raises(RegistryIndexError, match="index:release-tag-missing"):
         load_one_release({"version": "0.1.0", "sha256": "a" * 64})
 
 
 def test_unknown_release_source_is_a_named_error():
-    from agentdesk.registry.index import RegistryIndexError
+    from nexuusbot.registry.index import RegistryIndexError
     with pytest.raises(RegistryIndexError, match="index:release-source-invalid"):
         load_one_release({"version": "0.1.0", "sha256": "a" * 64,
                           "source": "tarball"})
 
 
 def test_local_release_with_a_tag_is_a_named_error():
-    from agentdesk.registry.index import RegistryIndexError
+    from nexuusbot.registry.index import RegistryIndexError
     with pytest.raises(RegistryIndexError, match="index:release-local-tag-present"):
         load_one_release({"version": "0.1.0", "sha256": "a" * 64,
                           "tag": "x-0.1.0", "source": "local"})

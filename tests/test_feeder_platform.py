@@ -17,7 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder import (
+from nexuusbot.feeder import (
     MailCollector,
     OutlookFeeder,
     UnavailableCollector,
@@ -26,12 +26,12 @@ from agentdesk.feeder import (
     write_mail,
     write_status,
 )
-from agentdesk.feeder.collectors.mac_notifications import MacNotificationCollector
-from agentdesk.feeder.collectors.wpn import WpnCollector
-from agentdesk.feeder.contract import MANUAL_CAUSE
-from agentdesk.feeder.platform import current_platform
+from nexuusbot.feeder.collectors.mac_notifications import MacNotificationCollector
+from nexuusbot.feeder.collectors.wpn import WpnCollector
+from nexuusbot.feeder.contract import MANUAL_CAUSE
+from nexuusbot.feeder.platform import current_platform
 
-FEEDER_SRC = ROOT / "src" / "agentdesk" / "feeder"
+FEEDER_SRC = ROOT / "src" / "nexuusbot" / "feeder"
 CORE_FILES = ["__init__.py", "contract.py", "writer.py", "runner.py"]
 PLATFORM_READERS = {
     "win32api", "win32com", "winreg", "AppKit", "Foundation", "objc",
@@ -136,8 +136,8 @@ def test_only_the_platform_module_imports_a_reader():
     for name in CORE_FILES:
         modules = imported_modules(FEEDER_SRC / name)
         assert not any(
-            module.startswith("agentdesk.feeder.collectors") for module in modules
+            module.startswith("nexuusbot.feeder.collectors") for module in modules
         ), name
     platform_modules = imported_modules(FEEDER_SRC / "platform.py")
-    assert "agentdesk.feeder.collectors.wpn" in platform_modules
-    assert "agentdesk.feeder.collectors.mac_notifications" in platform_modules
+    assert "nexuusbot.feeder.collectors.wpn" in platform_modules
+    assert "nexuusbot.feeder.collectors.mac_notifications" in platform_modules

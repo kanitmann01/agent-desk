@@ -13,12 +13,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.presentations.pipeline import fill_prompt
-from agentdesk.presentations.research import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.presentations.pipeline import fill_prompt
+from nexuusbot.presentations.research import (
     FETCH_TIMEOUT_S, MAX_RESPONSE_BYTES, RESULT_LIMIT, fetch_sources,
 )
-from agentdesk.presentations.writer import slide_texts
+from nexuusbot.presentations.writer import slide_texts
 
 
 def _llm(prompt, timeout=30):
@@ -196,7 +196,7 @@ def test_research_fetch_requires_https_and_caps_the_body():
         def __exit__(self, *args):
             return False
 
-    import agentdesk.presentations.research as research
+    import nexuusbot.presentations.research as research
     original = research.urllib.request.urlopen
     research.urllib.request.urlopen = lambda *args, **kwargs: _Body()
     try:
@@ -290,8 +290,8 @@ def test_the_resumed_artifact_names_the_pack_that_wrote_the_deck():
     import os
     import shutil
 
-    from agentdesk.presentations.packs import load_packs
-    from agentdesk.registry.install import tree_digest
+    from nexuusbot.presentations.packs import load_packs
+    from nexuusbot.registry.install import tree_digest
 
     def fetch(topic, sections):
         return [

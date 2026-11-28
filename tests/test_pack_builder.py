@@ -16,9 +16,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
-from agentdesk.presentations.packs import load_packs
-from agentdesk.presentations.writer import package_problems
+from nexuusbot.presentations.ooxml import build_shell, pack_zip, read_parts
+from nexuusbot.presentations.packs import load_packs
+from nexuusbot.presentations.writer import package_problems
 
 sys.path.insert(0, str(ROOT / "tools"))
 import pack_builder

@@ -2,7 +2,7 @@
 
 The full CLI flow runs with fake adapters, so no test touches the real
 network, OneDrive or EDR. One smoke test spawns a subprocess only to check
-`python -m agentdesk.probe --self-check` wiring.
+`python -m nexuusbot.probe --self-check` wiring.
 """
 
 import os
@@ -23,10 +23,10 @@ from probe_fakes import (
     SequenceRunner,
 )
 
-from agentdesk.probe import adapters as real
-from agentdesk.probe.adapters import Adapters
-from agentdesk.probe.cli import _current_user, main
-from agentdesk.probe.core import RunResult
+from nexuusbot.probe import adapters as real
+from nexuusbot.probe.adapters import Adapters
+from nexuusbot.probe.cli import _current_user, main
+from nexuusbot.probe.core import RunResult
 
 
 def all_pass_adapters(workdir: Path, onedrive_dir: Path) -> Adapters:
@@ -161,11 +161,11 @@ class TestCliUsageAndSelfCheck:
             assert status in out
 
     def test_module_execution_smoke_test(self):
-        # `python -m agentdesk.probe --self-check` must work with src on the path.
+        # `python -m nexuusbot.probe --self-check` must work with src on the path.
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
         proc = subprocess.run(
-            [sys.executable, "-m", "agentdesk.probe", "--self-check"],
+            [sys.executable, "-m", "nexuusbot.probe", "--self-check"],
             capture_output=True,
             text=True,
             cwd=str(ROOT),

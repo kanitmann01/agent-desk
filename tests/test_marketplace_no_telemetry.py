@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCAN_ROOTS = (REPO_ROOT / "src" / "agentdesk", REPO_ROOT / "frontend" / "src")
+SCAN_ROOTS = (REPO_ROOT / "src" / "nexuusbot", REPO_ROOT / "frontend" / "src")
 SKIP_PARTS = {"static", "spa", "__pycache__", "node_modules", "dist"}
 SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"}
 

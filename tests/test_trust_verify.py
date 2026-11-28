@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from agentdesk.registry.install import install_from_registry, read_lock, tree_digest
-from agentdesk.trust import TrustError
-from agentdesk.trust.canonical import canonical_bytes
-from agentdesk.trust.model import (
+from nexuusbot.registry.install import install_from_registry, read_lock, tree_digest
+from nexuusbot.trust import TrustError
+from nexuusbot.trust.canonical import canonical_bytes
+from nexuusbot.trust.model import (
     TrustStore,
     release_pin_payload,
     verify_publisher_cert,
@@ -274,7 +274,7 @@ def test_publisher_cert_verifies():
     ]
     root_doc = {"payload": root_payload, "signatures": root_signatures}
     raw = json.dumps(root_doc).encode("utf-8")
-    from agentdesk.trust.model import parse_root
+    from nexuusbot.trust.model import parse_root
 
     root = parse_root(raw)
 
@@ -475,7 +475,7 @@ def test_unknown_publisher_fails_install(tmp_path):
     scene = make_scene(tmp_path, publisher_id="ghost")
     # Build a store that has no cert for "ghost": rewrite certs to acme-tools.
     registry, store, info = scene
-    from agentdesk.trust.model import TrustStore
+    from nexuusbot.trust.model import TrustStore
 
     bare_dir = tmp_path / "bare-trust"
     root_keys = make_keys(3)
