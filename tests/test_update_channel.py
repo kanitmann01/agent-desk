@@ -17,7 +17,7 @@ def _publish(root, version, *, schema=1, manifest=None):
     folder.mkdir(parents=True)
     document = manifest if manifest is not None else {
         "schema_version": schema,
-        "product": "Agent Desk",
+        "product": "Nexuus Bot",
         "version": version,
         "files": [],
     }

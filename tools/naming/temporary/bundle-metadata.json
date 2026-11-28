@@ -2,35 +2,6 @@
   "family": "bundle-metadata",
   "ticket": "07",
   "issue": 361,
-  "note": "Ticket 07 (issue 361) clears this family and edits only this file. Installer names, the update alias, artifact names, share names, BinaryName and the signing placeholder identity are compatibility allowlist entries and do not move.",
-  "entries": [
-    {
-      "surface": "Windows bundle product, company and file-description fields, the bundle manifest product, and the build tool docstring and help",
-      "files": ["scripts/build_bundle.py"],
-      "issue": 361,
-      "matches": ["agent desk"]
-    },
-    {
-      "surface": "AppLocker template rule names, descriptions and ProductName conditions in the distribution guide",
-      "files": ["docs/ops/distribution.md"],
-      "issue": 361,
-      "matches": [
-        "name=\"agent desk - signed publisher\"",
-        "description=\"allow agent desk",
-        "productname=\"agent desk\""
-      ]
-    },
-    {
-      "surface": "SBOM and licence-gate tooling display text (docstrings, banner and help)",
-      "files": ["scripts/sbom.py", "scripts/license_gate.py"],
-      "issue": 361,
-      "matches": ["agent desk"]
-    },
-    {
-      "surface": "Local CI banner naming the product",
-      "files": ["tools/ci_local.py"],
-      "issue": 361,
-      "matches": ["agent-desk local ci"]
-    }
-  ]
+  "note": "Ticket 07 (issue 361) cleared this family: the Windows product, company and file-description fields, the bundle manifest product and the build, SBOM, licence-gate and local-CI display text say Nexuus Bot, and the AppLocker template's rule name, description and ProductName condition in docs/ops/distribution.md say Nexuus Bot while its BinaryName keeps AgentDesk.exe. The installer, alias, artifact, folder, zip, share and signing names are compatibility allowlist entries and never moved. Display-name enforcement is now fully on; only the package-path families (tickets 08 and 09) and the one scoped launcher-invocations entry (ticket 08 resolves it) remain anywhere in the list.",
+  "entries": []
 }

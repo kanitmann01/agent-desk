@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Agent Desk CycloneDX 1.6 SBOM.
+"""Generate the Nexuus Bot CycloneDX 1.6 SBOM.
 
 Sources of truth:
   * pyproject.toml   declared Python runtime dependencies, licensed via
