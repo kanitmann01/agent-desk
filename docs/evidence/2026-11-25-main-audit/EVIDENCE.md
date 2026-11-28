@@ -48,8 +48,11 @@ reviewer partitions (P1 to P7) with independent confirmations for the P0 and P1
 findings where a confirmer was available. No repository file was changed by any
 reviewer; reviewers were read-only and their outputs are these files.
 
-- Counts by final severity: P0: 1, P1: 16, P2: 19, P3: 18. Total: 54.
-- Counts by verdict: confirmed 27, narrowed 5, refuted 0, unchecked 22.
+- Counts by final severity: P0: 1, P1: 16, P2: 19, P3: 19. Total: 55.
+- Counts by verdict: confirmed 28, narrowed 5, refuted 0, unchecked 22.
+- The register's section 1 quotes the counts as accepted on 2026-11-25 (P3: 18,
+  confirmed 27); the PR349-R4 addition takes the register to 55 (P3: 19), which
+  is what `findings.json` holds.
 - Per-partition files in `findings/`: `P1` to `P7` findings and
   `confirmations-P1` to `confirmations-P6`.
 - Nonpass reviews of every walk in `reviews/`: pending, pending rerun, layout
