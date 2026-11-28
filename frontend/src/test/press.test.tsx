@@ -274,6 +274,90 @@ describe('the body the SPA posts (ticket 08)', () => {
   it('assembles no press body field by field', () => {
     expect(source).not.toMatch(/body\.(?:kind|text|subject|sender|last|thread|stage)\s*=/);
   });
+
+  it("carries the counter-evidence check's own phase, pending verb and done outcome (ticket 06)", () => {
+    expect(source).toContain("'Checking the counter-evidence'");
+    expect(source).toContain("'Checking the counter-evidence...'");
+    expect(source).toContain("'Counter-evidence checked'");
+  });
+});
+
+// The research reading's press (ticket 06): one check of the stored answer
+// against opposing evidence. The body is the press object verbatim, the
+// answer lands in place like any other press, and no stage action exists.
+describe('the counter-evidence press (ticket 06)', () => {
+  const COUNTER_CARD: PluginCard = {
+    id: 'research-brief~main',
+    title: 'Research brief',
+    version: '1.0.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'fresh',
+    cause: '',
+    payload: {
+      elements: [{ kind: 'text', text: 'Hybrid work reduced measured output per the stored answer.' }],
+      insight: {
+        status: 'ok',
+        source: 'local',
+        note: '',
+        blocks: [
+          { kind: 'receipts', text: 'Used the stored answer only.' },
+          { kind: 'falsify', text: 'What would change my mind: output falls where offices stayed full.' },
+        ],
+        press: {
+          label: 'Check counter-evidence',
+          route: '/api/insight/draft',
+          kind: 'check-counter',
+          text: 'Stored answer summary and its criterion, bounded.',
+        },
+      },
+    },
+  };
+
+  const COUNTER_ANSWER = {
+    status: 'draft',
+    text: 'The strongest opposing evidence is the office-first firms with the same drop.',
+    source: 'model',
+    disclosure: [
+      "Sends: the stored answer summary and the desk's falsification criterion.",
+      'Does not send: your workbook, your mail, your calendar, or any memory.',
+    ],
+    note: '',
+  };
+
+  it('posts the press verbatim and draws the answer with its disclosure', async () => {
+    const user = userEvent.setup();
+    const calls: PressCall[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        calls.push({ url, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
+        return jsonResponse(COUNTER_ANSWER);
+      }),
+    );
+    render(<PluginCardView card={COUNTER_CARD} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Check counter-evidence' }));
+    expect(await screen.findByText(COUNTER_ANSWER.text)).toBeInTheDocument();
+    expect(screen.getByText(COUNTER_ANSWER.disclosure[0])).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stage as a reply card' })).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('/api/insight/draft');
+    const { label: _label, route: _route, ...verbatim } = COUNTER_CARD.payload!.insight!.press!;
+    expect(calls[0].body).toEqual(verbatim);
+  });
+
+  it("shows the desk's refusal sentence when the model is off", async () => {
+    const user = userEvent.setup();
+    const modelOff =
+      'Nothing was checked: model calls are off on this desk, so there is no model to check with. Turn the model on in Settings, then ask again.';
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: modelOff, code: 'insight:model-off' }, 409)));
+    render(<PluginCardView card={COUNTER_CARD} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Check counter-evidence' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(modelOff);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check counter-evidence' })).toBeEnabled());
+  });
 });
 
 describe('the press on a nested-thread card (ticket 07)', () => {

@@ -11,7 +11,7 @@ import { useState } from 'react';
 import type { PluginCard, PluginElement, PluginSetup } from '../types';
 import Button from '../components/Button';
 import TrackerSetup from './TrackerSetup';
-import { drawableElements, ElementView, PressOffer } from './PluginCardView';
+import { DeltaBanner, drawableElements, ElementView, InsightBlocks, PressOffer } from './PluginCardView';
 import { TrackerFigure, WireState } from './cells';
 
 interface TrackerCardProps {
@@ -62,9 +62,15 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
     || (element.kind === 'sparkline' && element.label === 'History');
   const faceElements = live ? drawableElements(card.payload?.elements) : [];
   const reading = wizardFace ? [] : faceElements.filter((element) => !restatesTile(element));
+  // The sitting's delta rides the payload even on an attention tile, so it
+  // is read off the card whatever its state. These are the reading's
+  // InsightBlocks, not the plugin elements above: a "delta" block opens the
+  // tile and the rest render through the shared InsightBlocks, the same
+  // markup the generic tile draws.
+  const deltaBlock = card.payload?.insight?.blocks?.find((block) => block.kind === 'delta');
   const insight = live ? card.payload?.insight : undefined;
   const press = insight?.press ?? null;
-  const blocks = insight?.blocks ?? [];
+  const blocks = (insight?.blocks ?? []).filter((block) => block.kind !== 'delta');
   const firstReading = reading[0];
   const firstBlock = blocks[0];
   const restReading = reading.slice(1);
@@ -73,6 +79,7 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
 
   return (
     <div className="tracker-card">
+      <DeltaBanner block={deltaBlock} />
       {live && tracker ? (
         <TrackerFigure
           view={tracker}
@@ -92,29 +99,23 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
           {faceElements.map((element, i) => (
             <ElementView key={i} element={element} />
           ))}
-          {blocks.map((block, i) => (
-            <p className="w-note" key={i}>
-              {block.text}
-            </p>
-          ))}
+          <InsightBlocks blocks={blocks} />
         </>
       ) : hasReading ? (
         <section className="tracker-reading" aria-label="What this reading says">
           <p className="tracker-reading-title">What this reading says</p>
           {firstReading
             ? <ElementView element={firstReading} />
-            : <p className="w-note">{firstBlock.text}</p>}
+            : firstBlock
+              ? <InsightBlocks blocks={[firstBlock]} />
+              : null}
           {restReading.length > 0 || restBlocks.length > 0 ? (
             <details className="tracker-reading-more">
               <summary>More of this reading</summary>
               {restReading.map((element, i) => (
                 <ElementView key={i} element={element} />
               ))}
-              {restBlocks.map((block, i) => (
-                <p className="w-note" key={i}>
-                  {block.text}
-                </p>
-              ))}
+              <InsightBlocks blocks={restBlocks} />
             </details>
           ) : null}
         </section>
