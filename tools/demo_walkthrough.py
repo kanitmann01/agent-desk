@@ -1,6 +1,6 @@
 """The full user walkthrough (ticket #69): one scripted demo, real servers.
 
-Boots two REAL AgentDesk servers over fresh temp data dirs on ephemeral
+Boots two REAL Nexuus Bot servers over fresh temp data dirs on ephemeral
 ports (Desk A for the whole story, Desk B for the peer-to-peer part) and
 drives them over real HTTP exactly as a user's browser would: the
 bootstrap token exchange, every rail page, the sample-data switch and
@@ -985,7 +985,7 @@ class Walkthrough:
             ("customize: reorder and hide respect the payload, restore",
              self.step_customize),
         )
-        print("Agent Desk demo walkthrough")
+        print("Nexuus Bot demo walkthrough")
         print(f"checkout: {ROOT}")
         try:
             # ignore_cleanup_errors: the app's sqlite stores stay open for
