@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -546,6 +547,7 @@ class _PendingPage:
         self.dialog_timeout = dialog_timeout
         self.held_request = held_request
         self.events = []
+        self.goto_calendar = []
         self.routes = []
         self.fired = []
         self.clock = SimpleNamespace(install=lambda **_kwargs: None,
@@ -555,6 +557,7 @@ class _PendingPage:
         return None
 
     def goto(self, *_args, **_kwargs):
+        self.goto_calendar.append(os.environ.get("AGENTDESK_CALENDAR_FILE"))
         self.events.append("goto")
         if self.navigation_error:
             raise self.navigation_error
@@ -854,6 +857,29 @@ def test_pending_navigation_failure_records_an_error():
     assert len(records) == 1
     assert records[0]["verdict"] == "error"
     assert "navigation failed" in records[0]["evidence"]["reason"]
+
+
+def test_pending_calendar_navigation_uses_the_matrix_fixture(tmp_path):
+    """A calendar page navigates with the matrix fixture, then the empty pin returns.
+
+    The control page records an error here, and the empty pin is still
+    restored before its cleanup, exactly as on a clean page.
+    """
+    fixture = tmp_path / "calendar_sync.json"
+    control = {"index": 0, "ordinal": 0, "path": "button.save", "tag": "button",
+               "text": "Save", "disabled": False, "alreadySelected": False,
+               "wait_target": "#result"}
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": _planned_view("walkthrough-calendar")}
+    enum_page = _PendingPage([control])
+    fresh_page = _PendingPage()
+    records = audit._run_pending_audit(
+        _PendingContext([enum_page, fresh_page]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh", calendar_fixture=fixture)
+    assert enum_page.goto_calendar == [str(fixture)]
+    assert fresh_page.goto_calendar == [str(fixture)]
+    assert records[0]["verdict"] == "error"
+    assert os.environ["AGENTDESK_CALENDAR_FILE"] == ""
 
 
 def test_pending_activation_failure_is_an_error_not_a_skip(monkeypatch):
