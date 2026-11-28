@@ -77,6 +77,7 @@ from agentdesk.insight.preferences import PreferenceStore, PreferencesError, cha
 from agentdesk.insight.press import draft_reply, press_from_form, press_to_fields
 from agentdesk.insight.reading import press_label
 from agentdesk.insight.service import attach_cards
+from agentdesk.insight.snapshots import SnapshotStore
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
@@ -1231,11 +1232,15 @@ def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
 
     build_dashboard_state calls this once, so a reading is never JSON-only:
     the same sentence arrives through the API payload and through the
-    authored HTML.
+    authored HTML. The snapshot store is read purely here: the last-viewed
+    watermark feeds each tile's perceptual delta, and only the explicit
+    view endpoint ever writes it.
     """
+    snapshots = SnapshotStore(default_data_dir()).read()["cards"]
     attach_cards(
         cards,
         build_insight_context(server, PreferenceStore(default_data_dir()).read()),
+        snapshots=snapshots,
     )
     return cards
 
@@ -4688,10 +4693,17 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         Reading the dashboard used to spend pilot views inside the GET; the
         state builder made the read pure, so the page reports the view here
         once after a successful load. The spend rules live in the runtime,
-        which keeps them identical to the cards the read emitted.
+        which keeps them identical to the cards the read emitted. After the
+        spend, the tiles as they show right now are recorded as the
+        last-viewed snapshots, so the next read can say what changed since
+        this view.
         """
-        plugins = self.server.plugins  # type: ignore[attr-defined]
+        server = self.server  # type: ignore[attr-defined]
+        plugins = server.plugins
         spent = plugins.record_dashboard_view() if plugins is not None else 0
+        cards = plugins.widget_cards() if plugins is not None else []
+        with_insight(server, cards)
+        SnapshotStore(default_data_dir()).record(cards)
         self._send_json(200, {"spent": spent})
 
     def _apply_source_toggles(self, key: str, value) -> None:

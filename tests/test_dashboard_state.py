@@ -141,7 +141,11 @@ def widget_by_id(page_html: str, widget_id: str) -> dict:
 
 
 @pytest.fixture()
-def booted():
+def booted(tmp_path, monkeypatch):
+    # The desk keeps preferences and the last-seen snapshots under the data
+    # dir, which the gate shares across suites: a test that writes either
+    # (the explicit view report records snapshots) must move it first.
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path / "data"))
     server = server_harness.Booted()
     try:
         yield server
