@@ -134,6 +134,133 @@ def test_an_unknown_alias_submodule_is_the_canonical_import_error():
     assert "No module named 'agentdesk.no_such_module'" in proc.stderr
 
 
+# --- spec names and reload (the P2 fix pinned by the PR 389 review) ---
+#
+# The pinned semantics, chosen as the smallest coherent whole:
+#
+# - The alias import's spec (what the finder hands the machinery for an
+#   agentdesk.X import) is a CLONE named agentdesk.X that shares the
+#   canonical module's loader and origin. The canonical module's own
+#   __spec__ is never mutated.
+# - The one shared module object carries the canonical __spec__, so
+#   its __spec__.name reads the canonical name; that is what makes
+#   both reload spellings (importlib.reload(nexuusbot.X) and
+#   importlib.reload(agentdesk.X)) re-find the canonical spec and
+#   re-execute the real module through the canonical loader, instead
+#   of silently routing through the alias. A module object has one
+#   __spec__, so the shared object reading canonical is the choice
+#   that keeps reload real; the alias name keeps its own spec only at
+#   the finder level (find_spec on an alias submodule that is not yet
+#   in sys.modules returns the clone; once imported, it returns the
+#   shared canonical spec, exactly as for any imported module).
+# - Reload re-executes in place: the object identity between the two
+#   names holds before and after, and a name the module source
+#   assigns (its `import os` binding) is restored by the fresh
+#   execution, which is the observable marker that the code re-ran.
+
+_SPEC_SCRIPT = """\
+import importlib.util, json, sys
+
+order, modules_arg = sys.argv[1], sys.argv[2]
+modules = modules_arg.split(",")
+report = {"order": order, "alias_clone_names": {}, "modules": {}}
+import nexuusbot
+import agentdesk
+# The finder-level alias specs, probed before any agentdesk.X submodule
+# is imported: one clone per alias name, named for the alias.
+for name in modules:
+    report["alias_clone_names"][name] = importlib.util.find_spec(
+        "agentdesk." + name).name
+if order == "alias_first":
+    import agentdesk
+    import nexuusbot
+else:
+    import nexuusbot
+    import agentdesk
+for name in modules:
+    canonical = __import__("nexuusbot." + name, fromlist=["x"])
+    alias = __import__("agentdesk." + name, fromlist=["x"])
+    report["modules"][name] = {
+        "same_object": alias is canonical,
+        "shared_spec_name": canonical.__spec__.name,
+        "find_canonical_name": importlib.util.find_spec(
+            "nexuusbot." + name).name,
+    }
+print(json.dumps(report))
+"""
+
+_RELOAD_SCRIPT = """\
+import importlib, json, os, sys
+
+order = sys.argv[1]
+if order == "alias_first":
+    import agentdesk.config as alias_view
+    canonical = importlib.import_module("nexuusbot.config")
+else:
+    import nexuusbot.config as canonical
+    alias_view = importlib.import_module("agentdesk.config")
+report = {"order": order}
+report["import_identity"] = alias_view is canonical
+shared = sys.modules["nexuusbot.config"]
+# A name the module source assigns: `import os` rebinds it when the
+# code re-executes, so a planted canary is the execution marker.
+shared.os = "CANARY"
+importlib.reload(canonical)
+report["reexecuted"] = shared.os is not "CANARY" and shared.os is os
+report["reload_identity"] = sys.modules["agentdesk.config"] is shared \
+    and sys.modules["nexuusbot.config"] is shared
+report["spec_name_after_reload"] = shared.__spec__.name
+print(json.dumps(report))
+"""
+
+
+def _run_script(script, *args):
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SRC)
+    proc = subprocess.run(
+        [sys.executable, "-c", script, *args],
+        capture_output=True, text=True, env=env, cwd=str(ROOT),
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.parametrize("order", ["canonical_first", "alias_first"])
+def test_specs_stay_named_for_their_own_paths_in_both_import_orders(order):
+    """The canonical spec is never mutated; the alias import uses a clone.
+
+    In both orders: the finder-level spec for every probed alias
+    submodule is a clone named agentdesk.X; after the imports, the
+    shared module's __spec__.name and find_spec("nexuusbot.X").name
+    read the canonical name; and the identity contract still holds.
+    """
+    report = _run_script(_SPEC_SCRIPT, order, ",".join(IDENTITY_MODULES))
+    assert report["order"] == order
+    for name, clone_name in report["alias_clone_names"].items():
+        assert clone_name == "agentdesk." + name, name
+    for name, outcome in report["modules"].items():
+        assert outcome["same_object"] is True, name
+        assert outcome["shared_spec_name"] == "nexuusbot." + name, name
+        assert outcome["find_canonical_name"] == "nexuusbot." + name, name
+
+
+@pytest.mark.parametrize("order", ["canonical_first", "alias_first"])
+def test_reload_of_the_canonical_name_reexecutes_after_an_alias_import(
+        order):
+    """Reload after an alias import re-executes the real module.
+
+    importlib.reload(nexuusbot.config) re-runs the module source (the
+    planted canary is restored by the fresh execution), the module
+    object stays the same under both names, and the shared __spec__
+    still reads the canonical name afterwards.
+    """
+    report = _run_script(_RELOAD_SCRIPT, order)
+    assert report["import_identity"] is True
+    assert report["reexecuted"] is True, report
+    assert report["reload_identity"] is True
+    assert report["spec_name_after_reload"] == "nexuusbot.config"
+
+
 def _installed_interpreter(tmp_path: Path) -> Path:
     """Build and install the distribution into a temporary environment.
 
