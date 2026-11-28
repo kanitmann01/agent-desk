@@ -95,6 +95,22 @@ def test_the_update_share_fixtures_pin_the_manifest_product(tmp_path):
         )
 
 
+def test_the_frozen_entry_script_imports_the_canonical_package():
+    """The retained filename keeps its build role and imports nexuusbot.
+
+    Ticket 08 (issue 362): agent_desk_entry.py keeps its filename (the
+    frozen-build contract) and its import moves to the canonical
+    package; the build carries the alias beside it so the old import
+    path keeps resolving inside frozen builds too.
+    """
+    text = (ROOT / "scripts" / "agent_desk_entry.py").read_text(
+        encoding="utf-8")
+    assert "from nexuusbot.server.cli import main" in text, (
+        "the frozen entry script no longer imports the canonical package"
+    )
+    assert "agentdesk.server" not in text
+
+
 def test_the_display_families_carry_no_temporary_entries():
     """Name enforcement stays fully on, now including the package move.
 
