@@ -1,5 +1,5 @@
 // Shared marketplace DTO fixtures for the surface tests. They mirror the
-// server shapes from src/agentdesk/marketplace/catalog.py, so a component
+// server shapes from src/nexuusbot/marketplace/catalog.py, so a component
 // cannot pass by depending on a field the API does not send.
 import type {
   CatalogResponse, DetailResponse, InstalledResponse, InstalledSummary,

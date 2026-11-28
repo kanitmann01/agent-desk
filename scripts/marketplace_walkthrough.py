@@ -21,14 +21,14 @@ from types import SimpleNamespace
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from agentdesk.marketplace.api import (  # noqa: E402
+from nexuusbot.marketplace.api import (  # noqa: E402
     ADMIN_ENV,
     PREFIX,
     _run,
 )
-from agentdesk.marketplace.catalog import resolve_registry_root  # noqa: E402
-from agentdesk.plugins.runtime import PluginRuntime  # noqa: E402
-from agentdesk.registry.install import tree_digest  # noqa: E402
+from nexuusbot.marketplace.catalog import resolve_registry_root  # noqa: E402
+from nexuusbot.plugins.runtime import PluginRuntime  # noqa: E402
+from nexuusbot.registry.install import tree_digest  # noqa: E402
 
 
 class WalkthroughFailure(AssertionError):

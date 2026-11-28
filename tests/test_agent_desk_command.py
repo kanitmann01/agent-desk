@@ -29,7 +29,7 @@ def test_agent_desk_command_exists():
 
 def test_agent_desk_command_starts_the_server_module():
     text = command_text()
-    assert "python3 -m agentdesk.server" in text
+    assert "python3 -m nexuusbot.server" in text
 
 
 def test_agent_desk_command_points_pythonpath_at_the_source_tree():
@@ -52,7 +52,7 @@ def test_agent_desk_command_gates_on_python_version_not_just_presence():
 
 def test_agent_desk_command_reaches_uv_as_the_last_rung():
     text = command_text()
-    assert "uv run --no-project python -m agentdesk.server" in text
+    assert "uv run --no-project python -m nexuusbot.server" in text
 
 
 def test_agent_desk_command_sets_only_the_native_tls_spelling_for_uv():

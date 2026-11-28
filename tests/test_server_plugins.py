@@ -18,8 +18,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.plugins.runtime import PluginRuntime
-from agentdesk.server import app as server_app
+from nexuusbot.plugins.runtime import PluginRuntime
+from nexuusbot.server import app as server_app
 from plugins_fixtures import shell_zip, valid_zip, widened_zip  # noqa: E402
 
 
@@ -323,7 +323,7 @@ def test_plugin_api_answers_without_an_injected_runtime(tmp_path, monkeypatch):
 # The shipped launcher serves the committed SPA build, and that build is the
 # page a plugin action's redirect lands on; conftest defaults SPA_DIR away
 # so the rendered pages stay covered, so these tests point it back.
-COMMITTED_SPA = ROOT / "src" / "agentdesk" / "server" / "static" / "spa"
+COMMITTED_SPA = ROOT / "src" / "nexuusbot" / "server" / "static" / "spa"
 
 
 def _follow_page(running, method, path):

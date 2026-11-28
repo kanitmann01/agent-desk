@@ -18,12 +18,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.store import InboxStore
-from agentdesk.llm import LlmUnavailable
-from agentdesk.mail.store import MailStore
-from agentdesk.mail.watcher import MailWatch
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.mail.store import MailStore
+from nexuusbot.mail.watcher import MailWatch
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore
 
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 
@@ -351,7 +351,7 @@ def test_extra_hosts_save_rejects_a_non_string(env, auth):
 
 
 def test_toggling_excel_off_stops_ingestion_and_shows_the_disabled_state(env, auth):
-    from agentdesk.excel.watcher import Adapters, ExcelWatch
+    from nexuusbot.excel.watcher import Adapters, ExcelWatch
 
     watch = ExcelWatch(
         __import__("sqlite3").connect(":memory:", check_same_thread=False),
@@ -399,7 +399,7 @@ def test_the_your_ai_line_never_reads_as_a_false_green(env, auth):
     """An AI that is saved but whose last call failed must not read as
     healthy. The Your AI line keeps the old indicator's honesty (spec 022)
     without its "not configured" words."""
-    from agentdesk.llm import chat as real_chat
+    from nexuusbot.llm import chat as real_chat
 
     env.server.llm = lambda prompt: real_chat("http://127.0.0.1:9", "k", "m", prompt)
     env.server.llm_endpoint = "http://127.0.0.1:9"  # configured, and down

@@ -21,7 +21,7 @@ def run_registry_cli(*args: str) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
-        [sys.executable, "-m", "agentdesk.registry", *args],
+        [sys.executable, "-m", "nexuusbot.registry", *args],
         capture_output=True, text=True, env=env,
     )
 
@@ -29,7 +29,7 @@ def run_registry_cli(*args: str) -> subprocess.CompletedProcess:
 def test_index_round_trips(tmp_path):
     repo = make_registry(tmp_path)
     raw = (repo / "index.json").read_text(encoding="utf-8")
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     index = load_index(raw)
     assert index.plugins[0].id == "sales-delta-widget"
     assert index.plugins[0].publisher == "acme-tools"
@@ -49,7 +49,7 @@ def test_index_round_trips(tmp_path):
 
 
 def test_malformed_index_raises_named_reason(tmp_path):
-    from agentdesk.registry.index import RegistryIndexError, load_index
+    from nexuusbot.registry.index import RegistryIndexError, load_index
     with pytest.raises(RegistryIndexError, match="schemaVersion"):
         load_index(json.dumps({"plugins": []}))
     with pytest.raises(RegistryIndexError):

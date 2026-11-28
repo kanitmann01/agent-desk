@@ -26,12 +26,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.insight import PreferenceStore, PreferencesError
-from agentdesk.insight import service
-from agentdesk.insight.context import build_context
-from agentdesk.insight.preferences import changed, defaults, prompt_lines
-from agentdesk.insight.service import attach_cards
-from agentdesk.insight.types import InsightContext, InsightError, InsightReading
+from nexuusbot.insight import PreferenceStore, PreferencesError
+from nexuusbot.insight import service
+from nexuusbot.insight.context import build_context
+from nexuusbot.insight.preferences import changed, defaults, prompt_lines
+from nexuusbot.insight.service import attach_cards
+from nexuusbot.insight.types import InsightContext, InsightError, InsightReading
 
 
 def _context(**preferences) -> InsightContext:

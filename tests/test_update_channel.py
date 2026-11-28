@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agentdesk.update import channel
+from nexuusbot.update import channel
 
 
 def _publish(root, version, *, schema=1, manifest=None):

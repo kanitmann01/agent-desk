@@ -22,7 +22,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.crypto import (
+from nexuusbot.memory.crypto import (
     KEY_CHECK,
     CryptoBox,
     MemoryEncryptedError,

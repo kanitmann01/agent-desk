@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import pytest
 
 from server_harness import Booted
-from agentdesk.insight.preferences import PreferenceStore
+from nexuusbot.insight.preferences import PreferenceStore
 
 
 @pytest.fixture()

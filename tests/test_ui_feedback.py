@@ -26,7 +26,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server import pages, peers_view, wizard_view
+from nexuusbot.server import pages, peers_view, wizard_view
 
 # Every page this ticket owns, with the rail label the shell carries.
 PAGES = [
@@ -330,7 +330,7 @@ def test_the_wizard_model_steps_wait_on_its_progress(booted):
 
 
 def test_a_wizard_answer_that_builds_the_card_draws_the_widget_sketch():
-    from agentdesk.wizard.core import questions_for_answers
+    from nexuusbot.wizard.core import questions_for_answers
 
     answers = {
         "source": "An Excel workbook",

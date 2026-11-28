@@ -51,7 +51,7 @@ def test_start_command_delegates_the_double_click_path():
 def test_start_command_dev_branch_starts_both_processes():
     text = cmd_text()
     assert '"$1" = "dev"' in text
-    assert "agentdesk.server --port 8765" in text
+    assert "nexuusbot.server --port 8765" in text
     assert 'npm --prefix "$dir/../frontend" run dev' in text
 
 

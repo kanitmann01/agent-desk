@@ -27,8 +27,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.memory.embed import cosine
-from agentdesk.memory.graph import (
+from nexuusbot.memory.embed import cosine
+from nexuusbot.memory.graph import (
     DEFAULT_GRAPH_LIMIT,
     DEFAULT_MIN_SIMILARITY,
     LABEL_LENGTH,
@@ -39,8 +39,8 @@ from agentdesk.memory.graph import (
     build_graph,
     truncate_label,
 )
-from agentdesk.memory.core import Observation
-from agentdesk.memory.hybrid import EntityLink, DAY_SECONDS
+from nexuusbot.memory.core import Observation
+from nexuusbot.memory.hybrid import EntityLink, DAY_SECONDS
 
 DAY = DAY_SECONDS
 NOW = 1_800_000_000.0

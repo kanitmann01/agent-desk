@@ -16,7 +16,7 @@ SRC_DIR = TESTS_DIR.parent / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agentdesk.plugins.refresh import (
+from nexuusbot.plugins.refresh import (
     MODE_CLOCK,
     MODE_HOOK,
     MODE_VIEW,

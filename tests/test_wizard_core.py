@@ -19,9 +19,9 @@ SRC_DIR = TESTS_DIR.parent / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agentdesk.validator.core import validate_plugin as real_validate_plugin
-from agentdesk.validator.lint import KNOWN_DATA_SOURCE_TYPES
-from agentdesk.wizard import (
+from nexuusbot.validator.core import validate_plugin as real_validate_plugin
+from nexuusbot.validator.lint import KNOWN_DATA_SOURCE_TYPES
+from nexuusbot.wizard import (
     DEFAULT_QUESTIONS,
     MAX_QUESTIONS,
     MAX_REPAIRS,
@@ -35,8 +35,8 @@ from agentdesk.wizard import (
     resolve_choice,
     safe_slug,
 )
-from agentdesk.wizard import core as wizard_core
-from agentdesk.wizard import vocabulary as vocab
+from nexuusbot.wizard import core as wizard_core
+from nexuusbot.wizard import vocabulary as vocab
 
 CANONICAL_DESCRIPTION = "Watch my sales workbook and show the latest figure."
 CANONICAL_ANSWERS = {
@@ -154,7 +154,7 @@ def test_every_binding_the_wizard_offers_is_one_the_host_fills():
     """A look names a binding, and a binding no reader fills is a permanently
     blank tile. The host's own binding list is the contract, so the wizard's
     vocabulary has to stay inside it."""
-    from agentdesk.plugins.execute import BINDINGS
+    from nexuusbot.plugins.execute import BINDINGS
 
     offered: set[str] = set()
     for shows in vocab.ELEMENTS.values():
@@ -169,7 +169,7 @@ def test_every_binding_the_wizard_offers_is_one_the_host_fills():
 def test_every_look_is_a_real_element_kind():
     """A look that is not one of the ten element kinds would fail the shared
     validator at install time, which is too late to tell a manager."""
-    from agentdesk.plugins.vocabulary import ELEMENT_KINDS
+    from nexuusbot.plugins.vocabulary import ELEMENT_KINDS
 
     for shows in vocab.ELEMENTS.values():
         for looks in shows.values():

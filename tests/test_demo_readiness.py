@@ -56,30 +56,30 @@ class _ServerFactory:
         raise _BootStopped
 
 
-def _install_fake_agentdesk(monkeypatch, factory):
+def _install_fake_host(monkeypatch, factory):
     """Close every import the boot uses, so no production runner can execute."""
-    agentdesk = types.ModuleType("agentdesk")
-    agentdesk.__path__ = []
-    server_package = types.ModuleType("agentdesk.server")
+    host = types.ModuleType("nexuusbot")
+    host.__path__ = []
+    server_package = types.ModuleType("nexuusbot.server")
     server_package.__path__ = []
-    server_app = types.ModuleType("agentdesk.server.app")
+    server_app = types.ModuleType("nexuusbot.server.app")
     server_app.create_server = factory.create_server
     server_package.app = server_app
-    keys_package = types.ModuleType("agentdesk.keys")
+    keys_package = types.ModuleType("nexuusbot.keys")
     keys_package.__path__ = []
-    secrets = types.ModuleType("agentdesk.keys.secrets")
+    secrets = types.ModuleType("nexuusbot.keys.secrets")
 
     class KeychainSecrets:
         def __init__(self, backend):
             self.backend = backend
 
     secrets.KeychainSecrets = KeychainSecrets
-    probe_package = types.ModuleType("agentdesk.probe")
+    probe_package = types.ModuleType("nexuusbot.probe")
     probe_package.__path__ = []
-    core = types.ModuleType("agentdesk.probe.core")
+    core = types.ModuleType("nexuusbot.probe.core")
     core.GateResult = _GateResult
     core.UNKNOWN = "UNKNOWN"
-    capabilities = types.ModuleType("agentdesk.capabilities")
+    capabilities = types.ModuleType("nexuusbot.capabilities")
     capabilities.GATES = (
         ("exec-user-space", 1, "User-space execution"),
         ("uv-tls-bootstrap", 2, "uv bootstrap under corporate TLS"),
@@ -88,7 +88,7 @@ def _install_fake_agentdesk(monkeypatch, factory):
         ("edr-identity", 5, "EDR / AV identity"),
         ("embeddings", 6, "Endpoint embeddings"),
     )
-    for module in (agentdesk, server_package, server_app, keys_package, secrets,
+    for module in (host, server_package, server_app, keys_package, secrets,
                    probe_package, core, capabilities):
         monkeypatch.setitem(sys.modules, module.__name__, module)
 
@@ -97,7 +97,7 @@ def test_desk_boot_passes_every_inert_gate_runner(
         readiness, tmp_path, monkeypatch):
     """The readiness constructor injects UNKNOWN runners and starts no desk."""
     factory = _ServerFactory()
-    _install_fake_agentdesk(monkeypatch, factory)
+    _install_fake_host(monkeypatch, factory)
     monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path / "before"))
     with pytest.raises(_BootStopped):
         readiness.Desk(tmp_path / "data", tmp_path / "keychain.json", 0)
@@ -105,7 +105,7 @@ def test_desk_boot_passes_every_inert_gate_runner(
     runners = factory.create_calls[0].get("gate_runners")
     assert runners is not None
     assert set(runners) == {key for key, _number, _title in
-                            sys.modules["agentdesk.capabilities"].GATES}
+                            sys.modules["nexuusbot.capabilities"].GATES}
     assert {runner().status for runner in runners.values()} == {"UNKNOWN"}
 
 

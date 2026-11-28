@@ -28,7 +28,7 @@ where python >nul 2>nul
 if %errorlevel%==0 (
   python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
   if not errorlevel 1 (
-    start "Nexuus Bot API (dev)" cmd /k python -m agentdesk.server --port 8765
+    start "Nexuus Bot API (dev)" cmd /k python -m nexuusbot.server --port 8765
     goto ui
   )
 )
@@ -36,13 +36,13 @@ where py >nul 2>nul
 if %errorlevel%==0 (
   py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
   if not errorlevel 1 (
-    start "Nexuus Bot API (dev)" cmd /k py -3 -m agentdesk.server --port 8765
+    start "Nexuus Bot API (dev)" cmd /k py -3 -m nexuusbot.server --port 8765
     goto ui
   )
 )
 where uv >nul 2>nul
 if %errorlevel%==0 (
-  start "Nexuus Bot API (dev)" cmd /k uv run --no-project python -m agentdesk.server --port 8765
+  start "Nexuus Bot API (dev)" cmd /k uv run --no-project python -m nexuusbot.server --port 8765
   goto ui
 )
 echo Python not found on PATH and no uv. Install Python 3.10+ for your user, or install uv.

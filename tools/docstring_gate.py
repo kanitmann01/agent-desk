@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "docs" / "docstring-baseline.txt"
 
-PY_ROOTS = ("src/agentdesk", "tools", "scripts")
+PY_ROOTS = ("src/nexuusbot", "tools", "scripts")
 TS_ROOTS = ("frontend/src",)
 
 SKIP_DIRS = {

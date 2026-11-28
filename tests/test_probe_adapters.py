@@ -15,8 +15,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.probe.adapters import discover_onedrive, list_processes, subprocess_runner
-from agentdesk.probe.core import OneDriveInfo, RunResult
+from nexuusbot.probe.adapters import discover_onedrive, list_processes, subprocess_runner
+from nexuusbot.probe.core import OneDriveInfo, RunResult
 
 
 class TestSubprocessRunnerDecoding:
@@ -47,7 +47,7 @@ class RecordingRunner:
 class TestListProcessesPlatform:
     def test_windows_asks_tasklist_for_processes_and_services(self, monkeypatch):
         runner = RecordingRunner()
-        monkeypatch.setattr("agentdesk.probe.adapters.subprocess_runner", runner)
+        monkeypatch.setattr("nexuusbot.probe.adapters.subprocess_runner", runner)
 
         result = list_processes(windows=True)
 
@@ -56,7 +56,7 @@ class TestListProcessesPlatform:
 
     def test_everything_else_uses_the_portable_ps_shape(self, monkeypatch):
         runner = RecordingRunner()
-        monkeypatch.setattr("agentdesk.probe.adapters.subprocess_runner", runner)
+        monkeypatch.setattr("nexuusbot.probe.adapters.subprocess_runner", runner)
 
         result = list_processes(windows=False)
 

@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 
 import server_harness
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
 
 NOW = 1700000000.0
 
@@ -61,7 +61,7 @@ def test_sample_on_wires_pipeline_and_moves(env):
     _toggle(env, auth)
     assert env.server.excel.registered_path == str(_sample_workbook(env))
     assert env.server.calendar.explicit_path() == str(_sample_calendar(env))
-    from agentdesk.server.dashboard_state import build_dashboard_state
+    from nexuusbot.server.dashboard_state import build_dashboard_state
 
     payload = build_dashboard_state(env.server).payload()
     assert payload["sales"]["mode"] == "live"

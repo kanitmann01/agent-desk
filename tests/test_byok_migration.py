@@ -25,10 +25,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys import migrate
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.keys.store import KeysStore
-from agentdesk.settings import SettingsStore
+from nexuusbot.keys import migrate
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.keys.store import KeysStore
+from nexuusbot.settings import SettingsStore
 
 ENDPOINT_KEY = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
 RESEARCH_KEY = "rk-live-quietly-bbbbbbbbbbbbbbbb-4444"
@@ -365,7 +365,7 @@ def test_a_pair_whose_write_fails_is_logged_and_the_other_pair_still_migrates(ca
     keys = KeysStore(sqlite3.connect(":memory:", check_same_thread=False),
                      time.time)
     keychain = KeychainSecrets(MemoryKeychain())
-    with caplog.at_level(logging.ERROR, logger="agentdesk.keys.migrate"):
+    with caplog.at_level(logging.ERROR, logger="nexuusbot.keys.migrate"):
         created = migrate.migrate_legacy_settings(settings, keys, keychain)
     # The endpoint pair landed whole: connection, key in the keychain,
     # the default star and the legacy secret cleared from settings.
@@ -382,7 +382,7 @@ def test_a_pair_whose_write_fails_is_logged_and_the_other_pair_still_migrates(ca
     assert created != ["Migrated endpoint", "Migrated research provider"]
     assert keychain.fetch("migrated-research") == RESEARCH_KEY  # landed first
     records = [r for r in caplog.records
-               if r.name == "agentdesk.keys.migrate"]
+               if r.name == "nexuusbot.keys.migrate"]
     assert len(records) == 1
     assert records[0].levelno == logging.ERROR
     assert "Migrated research provider" in records[0].getMessage()

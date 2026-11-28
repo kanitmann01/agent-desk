@@ -15,14 +15,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.assistant import audit as audit_store
-from agentdesk.inbox.core import KIND_SUGGESTION
-from agentdesk.inbox.store import InboxStore
-from agentdesk.ledger import Ledger
-from agentdesk.ledger.undo import undo
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.core import Fact
-from agentdesk.recommend import rank
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.inbox.core import KIND_SUGGESTION
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.ledger import Ledger
+from nexuusbot.ledger.undo import undo
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.core import Fact
+from nexuusbot.recommend import rank
 
 MORNING = datetime.datetime(2026, 11, 20, 9, 0, 0)
 
@@ -316,7 +316,7 @@ class LatchingCtx(Ctx):
 
 
 def test_learned_lines_come_from_the_store_document(tmp_path):
-    from agentdesk.memory.profile import LearnedProfileStore
+    from nexuusbot.memory.profile import LearnedProfileStore
 
     store = LearnedProfileStore(
         tmp_path / "profile.learned.json", clock=lambda: MORNING.astimezone().timestamp())

@@ -25,9 +25,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.core import Fact, normalize_fact_text
-from agentdesk.memory.reflect import (
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.core import Fact, normalize_fact_text
+from nexuusbot.memory.reflect import (
     MAX_OBSERVATIONS,
     EndpointReflector,
     ObservationDraft,

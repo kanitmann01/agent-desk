@@ -19,8 +19,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.assistant.audit import VOCABULARY
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.assistant.audit import VOCABULARY
 
 
 @pytest.fixture()

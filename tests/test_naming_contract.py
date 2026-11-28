@@ -342,7 +342,7 @@ def test_temporary_entries_declare_the_old_avatar_initials():
         assert entry.get("expected_initials") == APPROVED_INITIALS
         assert "avatar" in entry["surface"].lower()
     named = {f for entry in avatars for f in entry["files"]}
-    assert "src/agentdesk/server/pages.py" not in named, (
+    assert "src/nexuusbot/server/pages.py" not in named, (
         "the server avatar carries the approved initials; its declaration "
         "should have left the temporary list"
     )

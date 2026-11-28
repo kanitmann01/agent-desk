@@ -2,7 +2,7 @@
 
 The Nexuus Bot dashboard is a React single-page app. This folder is its
 development source. The production build is emitted into
-`../src/agentdesk/server/static/spa/` and committed, so end users never
+`../src/nexuusbot/server/static/spa/` and committed, so end users never
 need node: the Python launcher serves the committed bundle directly.
 
 ## Rebuilding
@@ -10,7 +10,7 @@ need node: the Python launcher serves the committed bundle directly.
     npm ci
     npm run build
 
-Then commit the new contents of `src/agentdesk/server/static/spa/`.
+Then commit the new contents of `src/nexuusbot/server/static/spa/`.
 `npm run check` runs the TypeScript compiler only. `npm test` runs the
 unit suite (vitest: the design-contract tests and the component
 behavior tests).
@@ -28,7 +28,7 @@ behavior tests).
   never inlines one as a `data:` URL; the CSP allows `self` only); the
   license texts in `public/licenses/` ship beside them.
 - `src/dashboard/`: the dashboard cards, one branch per source state,
-  mirroring the server renderers in `src/agentdesk/server/sales.py`,
+  mirroring the server renderers in `src/nexuusbot/server/sales.py`,
   `commitments.py` and `research.py`.
 - `src/test/`: the vitest suite. `tokens.test.ts` pins the design
   contract to the stylesheet, the shell HTML, the package manifest and

@@ -3,7 +3,7 @@
 import hashlib
 
 from .test_validator_support import write_plugin
-from agentdesk.validator import validate_plugin
+from nexuusbot.validator import validate_plugin
 
 
 def failures(verdict):

@@ -27,7 +27,7 @@ def test_probe_command_exists():
 
 def test_probe_command_runs_the_module_with_passthrough_args():
     text = command_text()
-    assert "python3 -m agentdesk.probe" in text
+    assert "python3 -m nexuusbot.probe" in text
     assert '"$@"' in text
 
 
@@ -58,7 +58,7 @@ def test_probe_command_gates_on_python_version_not_just_presence():
 
 def test_probe_command_reaches_uv_as_the_last_rung():
     text = command_text()
-    assert "uv run --no-project python -m agentdesk.probe" in text
+    assert "uv run --no-project python -m nexuusbot.probe" in text
 
 
 def test_probe_command_sets_only_the_native_tls_spelling_for_uv():

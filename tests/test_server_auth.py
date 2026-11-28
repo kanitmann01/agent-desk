@@ -16,7 +16,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server.auth import SessionStore, session_id_from_cookie
+from nexuusbot.server.auth import SessionStore, session_id_from_cookie
 
 
 @pytest.fixture()
@@ -158,7 +158,7 @@ def test_server_binds_loopback_only(booted):
 
 
 def test_non_loopback_bind_is_refused():
-    from agentdesk.server import app
+    from nexuusbot.server import app
 
     with pytest.raises(ValueError):
         app.create_server(host="0.0.0.0")

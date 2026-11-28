@@ -27,8 +27,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys import health
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.keys import health
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
 
 SECRET = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
 

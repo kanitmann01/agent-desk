@@ -24,11 +24,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder.collectors.mac_notifications import (
+from nexuusbot.feeder.collectors.mac_notifications import (
     NO_OUTLOOK_CAUSE,
     MacNotificationCollector,
 )
-from agentdesk.feeder.writer import write_mail
+from nexuusbot.feeder.writer import write_mail
 
 APPLE_EPOCH_OFFSET_S = 978307200
 OUTLOOK = "com.microsoft.Outlook"

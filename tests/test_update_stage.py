@@ -11,7 +11,7 @@ import zipfile
 
 import pytest
 
-from agentdesk.update import stage
+from nexuusbot.update import stage
 
 
 def _sqlite(path, value):

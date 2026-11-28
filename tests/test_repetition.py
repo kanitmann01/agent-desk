@@ -18,11 +18,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.inbox.store import InboxStore
-from agentdesk.repetition.activity import ActivityLog
-from agentdesk.repetition.cluster import cluster_requests, pattern_hash, similarity
-from agentdesk.repetition.service import Consolidator
-from agentdesk.repetition.skills import SkillStore, render_skill_md
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.repetition.activity import ActivityLog
+from nexuusbot.repetition.cluster import cluster_requests, pattern_hash, similarity
+from nexuusbot.repetition.service import Consolidator
+from nexuusbot.repetition.skills import SkillStore, render_skill_md
 
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 

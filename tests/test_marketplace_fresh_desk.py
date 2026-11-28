@@ -25,8 +25,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from server_harness import Booted
-from agentdesk.marketplace.catalog import bundled_catalog_path
-from agentdesk.registry.install import tree_digest
+from nexuusbot.marketplace.catalog import bundled_catalog_path
+from nexuusbot.registry.install import tree_digest
 
 REGISTRY = ROOT / "registry"
 
@@ -60,7 +60,7 @@ def test_every_shipped_pin_matches_the_tree_it_ships():
     ]
     assert stale == [], (
         "bundled-catalog.json pins a stale digest; run scripts/sync_registry.py "
-        "and scripts/build_catalog.py --out src/agentdesk/marketplace/bundled-catalog.json"
+        "and scripts/build_catalog.py --out src/nexuusbot/marketplace/bundled-catalog.json"
     )
 
 

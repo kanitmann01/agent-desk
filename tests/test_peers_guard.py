@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.server.guard import check_peer_request, check_request  # noqa: E402
+from nexuusbot.server.guard import check_peer_request, check_request  # noqa: E402
 
 PORT = 8765
 

@@ -1,4 +1,4 @@
-// The shape GET /api/memory/graph answers (src/agentdesk/server/
+// The shape GET /api/memory/graph answers (src/nexuusbot/server/
 // memory_graph_api.py). Every node is a real row in the memory store or
 // the action that wrote one; nothing here is invented client-side.
 

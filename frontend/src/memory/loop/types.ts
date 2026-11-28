@@ -1,4 +1,4 @@
-// The shape GET /api/memory/loop answers (src/agentdesk/server/
+// The shape GET /api/memory/loop answers (src/nexuusbot/server/
 // memory_loop_api.py). Every row is a stored fact, entity, excerpt,
 // observation or a waiting review card; nothing is invented here.
 

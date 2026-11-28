@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from agentdesk.plugins.cards import (
+from nexuusbot.plugins.cards import (
     CardError,
     attention_card,
     card_to_api,
@@ -67,8 +67,8 @@ def test_every_card_the_runtime_emits_names_its_plugin(tmp_path):
     tampered install's attention card: each names its plugin and
     instance, because each was built by the factory.
     """
-    from agentdesk.plugins.config import InstanceStore
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.config import InstanceStore
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

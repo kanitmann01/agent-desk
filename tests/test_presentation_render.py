@@ -19,9 +19,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.presentations.ooxml import build_shell
-from agentdesk.presentations.render import _command, render_deck
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.presentations.ooxml import build_shell
+from nexuusbot.presentations.render import _command, render_deck
 
 PNG = b"\x89PNG\r\n\x1a\n"
 

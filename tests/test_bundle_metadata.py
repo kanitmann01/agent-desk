@@ -1,12 +1,15 @@
 """The human-readable file properties say Nexuus Bot.
 
-Ticket 07 of Spec 032 (issue 361). The Windows product, company and
-file-description fields, the bundle manifest product and the update
-tests' share-format fixtures carry the approved name, while every name a
-machine matches keeps its exact contract: AgentDesk.exe, the build
-entrypoint, the manifest schema and the bundle folder. The checks call
-the build functions and read tracked files; they never build, smoke or
-launch a bundle, and no desk, walk or application starts here.
+Ticket 07 of Spec 032 (issue 361), extended by ticket 08 (issue 362):
+the Windows product, company and file-description fields, the bundle
+manifest product and the update tests' share-format fixtures carry the
+approved name, while every name a machine matches keeps its exact
+contract: AgentDesk.exe, the build entrypoint, the manifest schema and
+the bundle folder. The frozen build now carries the canonical package
+and the compatibility alias, and the temporary list holds only ticket
+09's frontend-package entries. The checks call the build functions and
+read tracked files; they never build, smoke or launch a bundle, and no
+desk, walk or application starts here.
 """
 
 import importlib.util
@@ -16,8 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NAMING = ROOT / "tools" / "naming"
 
-# The display families of tickets 02 to 07 (Spec 032). The two package
-# families stay until tickets 08 and 09 clear them.
+# The families of tickets 02 to 08 (Spec 032). Only the frontend
+# package family (ticket 09) stays until it clears its own file.
 DISPLAY_FAMILIES = (
     ("server-pages", 356),
     ("spa-and-bundle", 357),
@@ -27,6 +30,7 @@ DISPLAY_FAMILIES = (
     ("frontend-setup", 359),
     ("operator-guides", 360),
     ("bundle-metadata", 361),
+    ("python-package", 362),
 )
 
 # The update tests whose fixture manifests pin the product the build
@@ -65,8 +69,10 @@ def test_the_windows_version_fields_say_nexuus_bot():
     assert "--windows-product-name=Nexuus Bot" in command
     assert "--windows-company-name=Nexuus Bot" in command
     assert "--windows-file-description=Nexuus Bot local application" in command
-    # The names a machine matches do not move.
+    # The names a machine matches do not move. The frozen build carries
+    # the canonical package and the compatibility alias beside it.
     assert "--output-filename=AgentDesk.exe" in command
+    assert "--include-package=nexuusbot" in command
     assert "--include-package=agentdesk" in command
 
 
@@ -89,46 +95,37 @@ def test_the_update_share_fixtures_pin_the_manifest_product(tmp_path):
         )
 
 
-def test_the_display_families_carry_no_temporary_entries():
-    """Ticket 07 turns name enforcement fully on for display text.
+def test_the_frozen_entry_script_imports_the_canonical_package():
+    """The retained filename keeps its build role and imports nexuusbot.
 
-    Every display family's file of the temporary list is empty, except
-    the two recorded exceptions. The one scoped launcher-invocations
-    entry in server-pages covers retained command spellings, not display
-    copy, and ticket 08 (issue 362) resolves it with the package move.
-    The two stale entries in frontend-setup stay because the README one
-    carries whole-file coverage that is load-bearing: three src/agentdesk
-    package-path references in frontend/README.md belong to the
-    python-package family (ticket 08), whose module-path entry lists
-    README.md but omits frontend/README.md. The structural question is
-    posted on issue 361; both entries are frozen as written here until
-    it is answered.
+    Ticket 08 (issue 362): agent_desk_entry.py keeps its filename (the
+    frozen-build contract) and its import moves to the canonical
+    package; the build carries the alias beside it so the old import
+    path keeps resolving inside frozen builds too.
+    """
+    text = (ROOT / "scripts" / "agent_desk_entry.py").read_text(
+        encoding="utf-8")
+    assert "from nexuusbot.server.cli import main" in text, (
+        "the frozen entry script no longer imports the canonical package"
+    )
+    assert "agentdesk.server" not in text
+
+
+def test_the_display_families_carry_no_temporary_entries():
+    """Name enforcement stays fully on, now including the package move.
+
+    Every display family's file of the temporary list is empty, and so
+    is the python-package family: ticket 08 (issue 362) moved the
+    package tree, re-pointed the launcher module rungs and updated the
+    three frontend README package-path references, which also resolves
+    the scoped launcher-invocations entry ticket 02 recorded (the
+    question posted on issue 356) and empties the two stale
+    frontend-setup entries (the question posted on issue 361). Only the
+    frontend-package family stays until ticket 09 (issue 363) clears it.
     """
     for name, _issue in DISPLAY_FAMILIES:
         path = NAMING / "temporary" / f"{name}.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        if name == "server-pages":
-            assert len(data["entries"]) == 1, (
-                "server-pages carries entries beyond the one scoped "
-                "launcher-invocations entry ticket 08 resolves"
-            )
-            assert data["entries"][0]["matches"] == ["-m agentdesk.server"]
-            continue
-        if name == "frontend-setup":
-            assert len(data["entries"]) == 2, (
-                "frontend-setup carries entries beyond the two stale "
-                "entries the structural question on issue 361 covers"
-            )
-            shapes = {
-                (tuple(entry.get("files", [])),
-                 tuple(entry.get("matches", [])))
-                for entry in data["entries"]
-            }
-            assert shapes == {
-                (("frontend/README.md",), ()),
-                (("frontend/package.json",), ("agent desk",)),
-            }, "the frozen frontend-setup entries moved"
-            continue
         assert data["entries"] == [], (
-            f"the display family {name} still carries temporary entries"
+            f"the family {name} still carries temporary entries"
         )

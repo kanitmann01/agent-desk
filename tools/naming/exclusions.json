@@ -14,7 +14,7 @@
       "paths": [
         "THIRD-PARTY-NOTICES.md",
         "licenses/*",
-        "src/agentdesk/server/static/spa/licenses/*"
+        "src/nexuusbot/server/static/spa/licenses/*"
       ],
       "reason": "Generated and bundled third-party notices keep their wording byte for byte; the generator scripts/third_party_notices.py carries the same wording under the legal-text allowlist entries.",
       "pinned_as": "unchanged provenance"

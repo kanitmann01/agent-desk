@@ -17,16 +17,16 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.llm import NO_ENDPOINT_CAUSE
-from agentdesk.presentations import leak
-from agentdesk.presentations.leak import load_hashes, scan
-from agentdesk.presentations.ooxml import (
+from nexuusbot.llm import NO_ENDPOINT_CAUSE
+from nexuusbot.presentations import leak
+from nexuusbot.presentations.leak import load_hashes, scan
+from nexuusbot.presentations.ooxml import (
     SAMPLE_TEXT, build_shell, pack_zip, read_parts,
 )
-from agentdesk.presentations.packs import load_packs
-from agentdesk.registry.install import install_from_registry, tree_digest
-from agentdesk.registry.index import load_index
-from agentdesk.validator.core import validate_plugin
+from nexuusbot.presentations.packs import load_packs
+from nexuusbot.registry.install import install_from_registry, tree_digest
+from nexuusbot.registry.index import load_index
+from nexuusbot.validator.core import validate_plugin
 
 PACK = ROOT / "registry" / "plugins" / "presentation-starter"
 REGISTRY = ROOT / "registry"

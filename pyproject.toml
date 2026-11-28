@@ -1,5 +1,5 @@
 [project]
-name = "agent-desk"
+name = "nexuus-bot"
 version = "0.1.0"
 description = "No-code personal agent web app for a locked-down corporate Windows laptop"
 license = { text = "Proprietary" }

@@ -19,15 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.inbox.core import STATUS_DISMISSED
-from agentdesk.inbox.service import evaluate
-from agentdesk.inbox.store import InboxStore
-from agentdesk.ledger.store import Ledger
-from agentdesk.ledger.undo import undo
-from agentdesk.memory.store import MemoryStore
-from agentdesk.recommend.builder import MAX_PENDING, WITHDRAWN_ORIGIN, RecommendationBuilder
-from agentdesk.server import demo_data
-from agentdesk.settings import SettingsStore
+from nexuusbot.inbox.core import STATUS_DISMISSED
+from nexuusbot.inbox.service import evaluate
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.ledger.undo import undo
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.recommend.builder import MAX_PENDING, WITHDRAWN_ORIGIN, RecommendationBuilder
+from nexuusbot.server import demo_data
+from nexuusbot.settings import SettingsStore
 
 NOV_20 = datetime(2026, 11, 20, 9, 0)
 

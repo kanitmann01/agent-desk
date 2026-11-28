@@ -3,8 +3,12 @@
 Spec 032 ticket 02 (issue 356). Where a retained launcher script prints
 the product name it prints the approved one: the double-click comments,
 the macOS starting echoes and the dev-stack window titles. The
-filenames do not change and the module invocations keep their retained
-compatibility spellings (pinned by the launcher tests beside these).
+filenames do not change. Ticket 08 (issue 362) re-pointed every launcher
+module invocation at the canonical package (issue 356's scoped launcher
+question), so the launchers start `python -m nexuusbot.server` and
+`python -m nexuusbot.probe`; the old `python -m agentdesk.*` spellings
+keep working through the alias and stay pinned by
+tests/test_module_commands.py.
 
 The files are read as text and asserted by content, never executed, the
 way tests/test_agent_desk_cmd.py reads the Windows launcher.
@@ -68,13 +72,17 @@ def test_start_command_comments_name_the_product():
     _assert_cleared("start.command")
 
 
-def test_the_retained_module_invocations_keep_their_spelling():
-    """The compatibility command stays: the launchers still start the
-    server module by its retained name until the package move."""
-    assert "-m agentdesk.server" in _text("agent-desk.cmd")
-    assert "python -m agentdesk.server" in _text("agent-desk.cmd")
-    assert "-m agentdesk.server" in _text("agent-desk.command")
-    assert "python -m agentdesk.probe" in _text("probe.cmd")
-    assert "python3 -m agentdesk.probe" in _text("probe.command")
-    assert "-m agentdesk.server" in _text("start.cmd")
-    assert "-m agentdesk.server" in _text("start.command")
+def test_the_launchers_start_the_canonical_module():
+    """Ticket 08 (issue 362) re-pointed the launcher rungs at the
+    canonical package: every rung starts `nexuusbot` modules, and no
+    launcher spells the old module any more (the old spellings keep
+    working through the alias for external users)."""
+    for name in ("agent-desk.cmd", "agent-desk.command",
+                 "start.cmd", "start.command"):
+        text = _text(name)
+        assert "-m nexuusbot.server" in text, name
+        assert "agentdesk" not in text, name
+    for name in ("probe.cmd", "probe.command"):
+        text = _text(name)
+        assert "-m nexuusbot.probe" in text, name
+        assert "agentdesk" not in text, name

@@ -26,7 +26,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server import pages
+from nexuusbot.server import pages
 
 
 class CaptureLlm:
@@ -327,7 +327,7 @@ def test_the_dashboard_payload_reports_no_network_in_production(booted):
 
 
 def test_a_runner_with_a_transport_reports_network_available(booted):
-    from agentdesk.plugins.execute import PluginWidgetRunner
+    from nexuusbot.plugins.execute import PluginWidgetRunner
 
     runtime = booted.server.plugins
     runtime.runner = PluginWidgetRunner(
@@ -420,7 +420,7 @@ def test_a_tracker_in_setup_keeps_its_dashboard_card(booted):
 
 
 def test_the_card_filter_drops_the_no_transport_identity_not_its_wording():
-    from agentdesk.server.dashboard_state import dashboard_plugin_cards
+    from nexuusbot.server.dashboard_state import dashboard_plugin_cards
 
     unrunnable = {
         "id": "competitor-watch",

@@ -19,8 +19,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder.writer import FEEDER_PREFIX, render_eml, write_mail, write_status
-from agentdesk.mail.core import Message, parse_eml, read_eml_folder_reported
+from nexuusbot.feeder.writer import FEEDER_PREFIX, render_eml, write_mail, write_status
+from nexuusbot.mail.core import Message, parse_eml, read_eml_folder_reported
 
 SAMPLE_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc).timestamp()
 DAY_S = 24 * 60 * 60
@@ -221,7 +221,7 @@ def test_write_mail_keeps_the_previous_file_and_cleans_temp_when_replace_fails(t
         """Stand in for a failing atomic replace."""
         raise OSError("the volume refused the replace")
 
-    monkeypatch.setattr("agentdesk.feeder.writer.os.replace", refuse_replace)
+    monkeypatch.setattr("nexuusbot.feeder.writer.os.replace", refuse_replace)
     with pytest.raises(OSError):
         write_mail([message(subject="Second")], folder, now=SAMPLE_NOW, window_days=14)
 
@@ -267,7 +267,7 @@ def test_write_status_overwrites_atomically_and_keeps_the_old_file_on_a_fault(tm
         """Stand in for a failing atomic replace."""
         raise OSError("the volume refused the replace")
 
-    monkeypatch.setattr("agentdesk.feeder.writer.os.replace", refuse_replace)
+    monkeypatch.setattr("nexuusbot.feeder.writer.os.replace", refuse_replace)
     with pytest.raises(OSError):
         write_status({**STATUS, "written": 9}, path)
     assert path.read_bytes() == previous

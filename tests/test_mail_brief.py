@@ -2,14 +2,14 @@
 
 from datetime import datetime, timezone
 
-from agentdesk.mail.brief import (
+from nexuusbot.mail.brief import (
     age_words,
     brief,
     digest_rows,
     reply_starters,
     top_message,
 )
-from agentdesk.mail.core import Message, parse_eml, with_threads
+from nexuusbot.mail.core import Message, parse_eml, with_threads
 
 
 def _msg(message_id, subject, sender, ts, to="employee@example.com",

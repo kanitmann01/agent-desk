@@ -1,6 +1,6 @@
 """Pin the declarative dashboard route table.
 
-The table in agentdesk.server.routes replaced the hand-written dispatch
+The table in nexuusbot.server.routes replaced the hand-written dispatch
 chains; these tests freeze its shape and the statuses clients saw before
 the refactor. Adding, dropping or reordering a route is therefore always a
 deliberate edit here as well, and the dispatcher keeps answering the same
@@ -12,8 +12,8 @@ from urllib.parse import quote, urlencode
 
 import pytest
 
-from agentdesk.server import app as server_app
-from agentdesk.server import routes
+from nexuusbot.server import app as server_app
+from nexuusbot.server import routes
 from server_harness import Booted
 
 # (method, path, handler, prefix, arg, suffix), in dispatch order. Paths are

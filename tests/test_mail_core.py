@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.mail.core import (
+from nexuusbot.mail.core import (
     DAY_S,
     DIGEST_HOURS,
     FOLLOW_UP_DAYS,
@@ -374,7 +374,7 @@ def test_format_header_ts_reads_unknown_date_when_the_clock_refuses(monkeypatch,
         def fromtimestamp(_ts):
             raise error("the platform refused this date")
 
-    monkeypatch.setattr("agentdesk.mail.core.datetime", RefusingClock)
+    monkeypatch.setattr("nexuusbot.mail.core.datetime", RefusingClock)
     assert format_header_ts(10.0 ** 20) == "unknown date"
 
 

@@ -33,7 +33,7 @@ def index_text(digest, plugin_id="sales-delta-widget", dependencies=None):
 
 def review(tmp_path, digest, plugin_dir=None, plugin_id="sales-delta-widget",
            base_index_text=None, dependencies=None):
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
     registry_root = tmp_path / "registry"
     registry_root.mkdir(parents=True)
     (registry_root / "index.json").write_text(
@@ -79,14 +79,14 @@ def test_unknown_dependency_blocks(tmp_path):
 
 
 def test_known_dependency_passes(tmp_path):
-    from agentdesk.registry.index import load_index
+    from nexuusbot.registry.index import load_index
     base = json.loads(index_text(tree_digest(PLUGIN_FIXTURE)))
     base["plugins"].append(dict(base["plugins"][0], id="base-plugin"))
     registry_root = tmp_path / "registry"
     registry_root.mkdir(parents=True)
     (registry_root / "index.json").write_text(json.dumps(base, indent=2),
                                               encoding="utf-8")
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
     out = review_registry_changes(
         registry_root, [PLUGIN_FIXTURE],
         base_index_text=None)
@@ -108,7 +108,7 @@ def test_truncated_history_blocks(tmp_path):
     document["plugins"][0]["latest"] = "1.3.0"
     new = json.dumps(document, indent=2)
 
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
     registry_root = tmp_path / "registry"
     registry_root.mkdir(parents=True)
 
@@ -133,7 +133,7 @@ def _published_registry(tmp_path, plugin_id="team-notes-widget",
     """A bare (non-git) registry with one locally published release."""
     import shutil
 
-    from agentdesk.registry.publish import publish_to_registry
+    from nexuusbot.registry.publish import publish_to_registry
 
     root = tmp_path / "local-registry"
     (root / "plugins").mkdir(parents=True)
@@ -152,7 +152,7 @@ def _published_registry(tmp_path, plugin_id="team-notes-widget",
 
 
 def test_ci_green_over_a_local_release(tmp_path):
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     root, _source = _published_registry(tmp_path)
     out = review_registry_changes(
@@ -162,7 +162,7 @@ def test_ci_green_over_a_local_release(tmp_path):
 
 
 def test_ci_blocks_a_tampered_local_release(tmp_path):
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     root, _source = _published_registry(tmp_path)
     manifest_path = (root / "plugins" / "team-notes-widget" / "0.1.0"
@@ -191,7 +191,7 @@ def _two_published_versions(tmp_path):
             target.write_bytes(item.read_bytes())
     (second / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n",
                                          encoding="utf-8")
-    from agentdesk.registry.publish import publish_to_registry
+    from nexuusbot.registry.publish import publish_to_registry
     publish_to_registry(root, "team-notes-widget", version="0.2.0",
                         source_dir=second)
     return root
@@ -201,7 +201,7 @@ def test_ci_blocks_when_an_earlier_local_release_tree_is_missing(tmp_path):
     """A local release's install reads its versioned directory straight
     from the working tree, so a missing one is a broken pin: CI must
     say so even when only the newest version's directory was changed."""
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     root = _two_published_versions(tmp_path)
     shutil.rmtree(root / "plugins" / "team-notes-widget" / "0.1.0")
@@ -213,7 +213,7 @@ def test_ci_blocks_when_an_earlier_local_release_tree_is_missing(tmp_path):
 
 
 def test_ci_blocks_when_an_earlier_local_release_tree_is_tampered(tmp_path):
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     root = _two_published_versions(tmp_path)
     manifest_path = (root / "plugins" / "team-notes-widget" / "0.1.0"
@@ -232,7 +232,7 @@ def test_ci_blocks_when_an_earlier_local_release_tree_is_tampered(tmp_path):
 def test_ci_history_understands_local_releases(tmp_path):
     """A local release is history like any other: appending is green,
     dropping it truncates a client's pin and is refused."""
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     root = _two_published_versions(tmp_path)
     # The base index is the single-version document from before the

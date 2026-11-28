@@ -27,11 +27,11 @@
 # bundle byte for byte.
 licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
-src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
+src/nexuusbot/server/static/spa/licenses/*.txt text eol=lf
 # The build-compare contract (a fresh vite build must diff clean against
 # this tree) needs LF bytes in index.html on every checkout; the generic
 # *.html rule missed a dirty blob already in the index, so the path pin.
-src/agentdesk/server/static/spa/index.html text eol=lf
+src/nexuusbot/server/static/spa/index.html text eol=lf
 # The registry trees are digest-pinned: index.json publishes a sha256 per
 # release and every install re-hashes the working tree, so each checkout
 # must see the committed bytes. Pin LF under registry/ so core.autocrlf

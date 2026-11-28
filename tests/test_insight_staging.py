@@ -21,11 +21,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.inbox.store import InboxStore
-from agentdesk.insight import press
-from agentdesk.mail.store import MailStore
-from agentdesk.settings import SettingsStore
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.insight import press
+from nexuusbot.mail.store import MailStore
+from nexuusbot.settings import SettingsStore
 
 MESSAGE_ID = "<budget-1@example.com>"
 MODEL_TEXT = "Thanks for the numbers. I will send the revised budget by Friday."

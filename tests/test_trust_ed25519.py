@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from agentdesk.trust import ed25519
+from nexuusbot.trust import ed25519
 
 # (label, seed hex, public key hex, message hex or tuple of hex chunks, signature hex)
 VECTORS = [

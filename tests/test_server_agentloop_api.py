@@ -23,10 +23,10 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _path)
 
 import server_harness
-from agentdesk.agentloop.loop import AgentLoop, Step
-from agentdesk.assistant import audit as audit_store
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore
+from nexuusbot.agentloop.loop import AgentLoop, Step
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore
 
 
 def _wait_until(predicate, timeout: float = 5.0, step: float = 0.02) -> bool:

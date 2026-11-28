@@ -23,10 +23,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys import health
-from agentdesk.keys.presets import PRESETS, preset_for
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.keys.store import KeysStore
+from nexuusbot.keys import health
+from nexuusbot.keys.presets import PRESETS, preset_for
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.keys.store import KeysStore
 
 SECRET = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
 

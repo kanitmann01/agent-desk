@@ -224,8 +224,8 @@ def test_each_allowlist_entry_is_accepted_only_in_its_documented_context():
         "frontend/src/face/brain.ts",
         "frontend/src/dashboard/TrackerCard.tsx",
         "frontend/src/marketplace/CatalogPage.tsx",
-        "src/agentdesk/excel/core.py",
-        "src/agentdesk/server/health.py",
+        "src/nexuusbot/excel/core.py",
+        "src/nexuusbot/server/health.py",
         "tools/probe_tool.py",
         "scripts/probe_script.py",
         "registry/probe.md",
@@ -271,11 +271,13 @@ def test_a_new_old_form_path_would_be_rejected():
 
 
 def test_the_retained_path_forms_stay_allowed():
-    """A retained launcher, its test and the package tree keep their names."""
+    """A retained launcher, its test, the frozen entry script and the
+    alias shim keep their names."""
     contract = g.load_contract()
     assert g.path_miss("tools/agent-desk.cmd", contract) is None
     assert g.path_miss("tests/test_agent_desk_cmd.py", contract) is None
-    assert g.path_miss("src/agentdesk/server/pages.py", contract) is None
+    assert g.path_miss("scripts/agent_desk_entry.py", contract) is None
+    assert g.path_miss("src/agentdesk/__init__.py", contract) is None
     assert g.path_miss("docs/evidence/x/agent-desk-notes.md", contract) is None
 
 
@@ -294,13 +296,13 @@ def test_the_em_dash_scope_keeps_the_old_live_trees():
     """src and tests are scanned; the docs trees and records stay out."""
     dash = " // note: planted " + chr(0x2014) + " here\n"
     planted = {
-        "src/agentdesk/config.py": dash,
+        "src/nexuusbot/config.py": dash,
         "tests/test_brand_naming.py": dash,
         "docs/ops/distribution.md": dash,
         "docs/docstrings.md": dash,
     }
     hits = g.em_dash_violations(planted)
-    assert any(h.startswith("src/agentdesk/config.py") for h in hits), hits
+    assert any(h.startswith("src/nexuusbot/config.py") for h in hits), hits
     assert any(h.startswith("tests/test_brand_naming.py") for h in hits), hits
     assert not any(h.startswith("docs/") for h in hits), hits
 
@@ -348,13 +350,36 @@ def test_the_recorded_baseline_is_the_measured_notes_baseline():
 
 
 def test_the_count_report_satisfies_the_r2_method_on_this_tree():
-    """The classification adds up and nothing is left unexplained."""
+    """The classification adds up and nothing is left unexplained.
+
+    Ticket 08 (issue 362) moved the package tree to nexuusbot, so the
+    old-form tracked paths collapsed from the sweep's 301 to exactly the
+    retained set: the excluded archives, the retained launchers, the
+    frozen entry script, the tests of the retained launchers and the
+    alias shim. The test pins that set so a new old-form path cannot
+    land unexplained.
+    """
     live = g.count()
     assert live["allowlisted"] + live["temporary"] + live["unclassified"] == \
         live["occurrences"]
     assert live["unclassified"] == 0
     assert live["scanned_files"] > 100, "the scan scope collapsed"
-    assert live["old_form_paths"] > 100, "the tracked-path count collapsed"
+    retained_paths = sorted(
+        path.as_posix() for path in g.tracked_paths()
+        if any(form in path.as_posix().lower() for form in g.old_forms())
+    )
+    assert retained_paths == [
+        "docs/design/inspirations/Agent-Desk-Design-Inspirations.pdf",
+        "docs/evidence/2026-11-21-017-08/401-gate-agent-desk.png",
+        "scripts/agent_desk_entry.py",
+        "specs/001-agent-desk-v1.md",
+        "src/agentdesk/__init__.py",
+        "tests/test_agent_desk_cmd.py",
+        "tests/test_agent_desk_command.py",
+        "tools/agent-desk.cmd",
+        "tools/agent-desk.command",
+    ]
+    assert live["old_form_paths"] == len(retained_paths)
 
 
 def test_occurrences_count_matches_not_lines():

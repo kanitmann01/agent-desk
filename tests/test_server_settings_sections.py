@@ -19,9 +19,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys import health
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.server import pages
+from nexuusbot.keys import health
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.server import pages
 
 SECTIONS = ["ai", "tools", "memory", "preferences", "advanced"]
 BAR = ["Your AI", "Your tools", "Memory", "Preferences", "Activity", "Advanced"]

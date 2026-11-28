@@ -22,13 +22,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
-from agentdesk.llm import LlmUnavailable, chat_client
-from agentdesk.memory.crypto import load_key
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
+from nexuusbot.llm import LlmUnavailable, chat_client
+from nexuusbot.memory.crypto import load_key
+from nexuusbot.memory.store import MemoryStore
 from excel_fixtures import base_workbook
 
 
@@ -59,7 +59,7 @@ def _review_first_settings():
     off, so captured facts stage as review cards. Spec 016 flipped the
     stored default to True for new folders, so the default no longer
     pins the review flow these tests exercise."""
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.settings import SettingsStore
 
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False),
                              time.time)
@@ -645,7 +645,7 @@ def test_a_transient_memory_failure_runs_the_agent_with_no_facts(env, auth, capl
         raise sqlite3.OperationalError("database is locked")
 
     env.server.memory.recall = locked
-    with caplog.at_level(logging.WARNING, logger="agentdesk.server"):
+    with caplog.at_level(logging.WARNING, logger="nexuusbot.server"):
         status, _h, body = _run(env, auth)
     assert status == 200
     payload = json.loads(body)

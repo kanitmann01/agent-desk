@@ -21,12 +21,12 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.inbox.store import InboxStore
-from agentdesk.ledger.store import Ledger
-from agentdesk.memory.store import MemoryStore
-from agentdesk.settings import SettingsStore
-from agentdesk.server import demo_data
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.settings import SettingsStore
+from nexuusbot.server import demo_data
 
 MORNING = datetime.datetime(2026, 11, 20, 9, 0, 0)
 

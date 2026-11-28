@@ -22,13 +22,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
-from agentdesk.plugins.execute import PluginWidgetRunner
-from agentdesk.plugins.runtime import PluginRuntime
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
+from nexuusbot.plugins.execute import PluginWidgetRunner
+from nexuusbot.plugins.runtime import PluginRuntime
 from plugins_fixtures import valid_zip
 from excel_fixtures import base_workbook, make_xlsx
 

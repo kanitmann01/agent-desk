@@ -17,8 +17,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.server import app as server_app
-from agentdesk.server import memory_api as server_memory_api
+from nexuusbot.server import app as server_app
+from nexuusbot.server import memory_api as server_memory_api
 
 
 @pytest.fixture(autouse=True)

@@ -13,7 +13,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.excel.core import Delta, compute_delta, row_hash
+from nexuusbot.excel.core import Delta, compute_delta, row_hash
 
 
 def test_row_hash_is_stable_across_calls_and_order_sensitive():

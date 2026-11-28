@@ -19,10 +19,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.server import app as server_app
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.server import app as server_app
 
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 

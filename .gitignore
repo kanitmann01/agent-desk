@@ -12,7 +12,7 @@ build/
 .env.local
 .composio/
 
-# frontend dev toolchain: the committed bundle in src/agentdesk/server/static/spa is the product
+# frontend dev toolchain: the committed bundle in src/nexuusbot/server/static/spa is the product
 frontend/node_modules/
 .playwright-cli/
 

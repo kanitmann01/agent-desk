@@ -23,14 +23,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from plugins_fixtures import VALID_PLUGIN_DIR, build_zip
-from agentdesk.insight.service import attach_cards
-from agentdesk.insight.snapshots import (
+from nexuusbot.insight.service import attach_cards
+from nexuusbot.insight.snapshots import (
     PREFIX,
     SnapshotStore,
     card_signature,
     perceptual_delta,
 )
-from agentdesk.insight.types import InsightContext
+from nexuusbot.insight.types import InsightContext
 
 NOW = 1_760_000_000.0
 

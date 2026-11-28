@@ -17,13 +17,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 from probe_fakes import gate as make_gate
 
-from agentdesk.capabilities import (
+from nexuusbot.capabilities import (
     GATES,
     CapabilitiesCache,
     default_gate_runners,
 )
-from agentdesk.probe.adapters import Adapters
-from agentdesk.probe.core import (
+from nexuusbot.probe.adapters import Adapters
+from nexuusbot.probe.core import (
     FAIL,
     GATE_EMBEDDINGS,
     GATE_KEYS,

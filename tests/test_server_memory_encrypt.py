@@ -22,9 +22,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.memory.crypto import load_key
-from agentdesk.memory.store import MemoryStore, ensure_key_file, write_key_file
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.memory.crypto import load_key
+from nexuusbot.memory.store import MemoryStore, ensure_key_file, write_key_file
 
 
 KEY = load_key(bytes(range(32)))
@@ -251,7 +251,7 @@ def test_the_default_store_names_a_corrupt_key_file_as_corrupt(tmp_path,
     """The startup read (spec 017, 4d): a memory.key that exists but is
     not a valid key locks the store with the cause that says so, not the
     missing-file wording the banner used to show."""
-    from agentdesk.server.app import _default_memory_store
+    from nexuusbot.server.app import _default_memory_store
 
     data_dir = tmp_path / "desk-data"
     data_dir.mkdir()

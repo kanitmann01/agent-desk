@@ -23,11 +23,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.excel.xlsx import parse_workbook_bytes
-from agentdesk.inbox.core import UnknownCard
-from agentdesk.inbox.store import InboxStore
-from agentdesk.server import demo_data
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.excel.xlsx import parse_workbook_bytes
+from nexuusbot.inbox.core import UnknownCard
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.server import demo_data
 
 MORNING = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 

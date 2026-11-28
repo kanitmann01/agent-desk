@@ -1,6 +1,6 @@
 """The SPA's vocabulary module is generated, and the committed copy is current.
 
-The exporter renders agentdesk.plugins.vocabulary into the TypeScript module
+The exporter renders nexuusbot.plugins.vocabulary into the TypeScript module
 the frontend imports. Re-running it into a temporary path and comparing bytes
 with the committed file is the same gate the committed SPA bundle uses: editing
 the Python owner without regenerating the module fails here instead of

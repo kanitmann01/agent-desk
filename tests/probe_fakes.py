@@ -8,7 +8,7 @@ duplicating them. No fake here touches the network, OneDrive or EDR.
 import shutil
 from pathlib import Path
 
-from agentdesk.probe.core import GateResult, RunResult
+from nexuusbot.probe.core import GateResult, RunResult
 
 
 class FakeRunner:
@@ -55,7 +55,7 @@ class FakeReacher:
 
     def __call__(self, url):
         self.urls.append(url)
-        from agentdesk.probe.core import ReachResult
+        from nexuusbot.probe.core import ReachResult
 
         return ReachResult(status=self.status, error=self.error, url=url)
 
@@ -66,7 +66,7 @@ class FakeOneDriveDiscoverer:
         self.how = how
 
     def __call__(self):
-        from agentdesk.probe.core import OneDriveInfo
+        from nexuusbot.probe.core import OneDriveInfo
 
         if self.path is None:
             return None

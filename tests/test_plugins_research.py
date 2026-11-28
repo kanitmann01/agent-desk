@@ -17,8 +17,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.plugins.render import ELEMENT_KINDS, render_sample  # noqa: E402
-from agentdesk.validator import validate_plugin  # noqa: E402
+from nexuusbot.plugins.render import ELEMENT_KINDS, render_sample  # noqa: E402
+from nexuusbot.validator import validate_plugin  # noqa: E402
 
 PLUGINS = ROOT / "registry" / "plugins"
 FAMILY = ("competitor-watch",)

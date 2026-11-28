@@ -90,7 +90,7 @@ def test_the_rank_step_pays_the_ledger_and_undo_restores_the_card(env, auth, mon
     endpoint reply; the change must appear in the ledger with its Undo, and
     Undo must put the rule's why line back on the card.
     """
-    from agentdesk.recommend import rank as rank_module
+    from nexuusbot.recommend import rank as rank_module
 
     target = datetime.date.today() + datetime.timedelta(days=10)
     if (target.month, target.day) == (2, 29):

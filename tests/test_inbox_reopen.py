@@ -17,8 +17,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.inbox.core import RECOVERY_DAYS, STATUS_WAITING, UnknownCard
-from agentdesk.inbox.store import InboxStore
+from nexuusbot.inbox.core import RECOVERY_DAYS, STATUS_WAITING, UnknownCard
+from nexuusbot.inbox.store import InboxStore
 
 MORNING = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 

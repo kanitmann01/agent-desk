@@ -19,7 +19,7 @@ Useful filters:
     --only-condition fresh   --fail-on high
 
 The tool refuses to run on a real desk: every ``AGENTDESK_*`` variable is
-pinned before ``agentdesk`` is imported, and ``AGENTDESK_DATA`` always
+pinned before ``nexuusbot`` is imported, and ``AGENTDESK_DATA`` always
 points at a fresh temporary folder.
 
 Coverage is part of the result. After writing the outputs, a run where any
@@ -321,8 +321,8 @@ THEMES = ("unkey", "coforge", "momentuum")
 STRESS_CONDITIONS = ("fresh", "full")
 STRESS_WIDTHS = (1024, 1280)
 
-# Every environment variable the product reads, from a grep of src/agentdesk.
-# They are all pinned before agentdesk is imported; an empty value is a real
+# Every environment variable the product reads, from a grep of src/nexuusbot.
+# They are all pinned before nexuusbot is imported; an empty value is a real
 # value and beats ~/.agent-desk/config.env under load_env_file's setdefault.
 PINNED_EMPTY = (
     "AGENTDESK_LLM_BASE",
@@ -2021,7 +2021,7 @@ def _free_udp_port() -> int:
 def _load_mock_module():
     """The loopback mock endpoint module, by path (tools is not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "agentdesk_layout_mock", ROOT / "tools" / "mock_endpoint.py")
+        "nexuusbot_layout_mock", ROOT / "tools" / "mock_endpoint.py")
     if spec is None or spec.loader is None:
         raise AuditError("tools/mock_endpoint.py cannot be loaded")
     module = importlib.util.module_from_spec(spec)
@@ -2068,7 +2068,7 @@ class FileKeychain:
 def _pin_environment(data_dir: Path, condition: str, mock_port: int | None) -> None:
     """Set every AGENTDESK_* variable this process reads.
 
-    Must run before any agentdesk import. Empty values are real values and
+    Must run before any nexuusbot import. Empty values are real values and
     beat ~/.agent-desk/config.env under load_env_file's setdefault rules;
     AGENTDESK_DATA is the one variable that must stay non-empty.
     """
@@ -2120,8 +2120,8 @@ def _pin_store_clocks(server) -> None:
 
 def _inert_gate_runners() -> dict:
     """The local test gate's UNKNOWN runners, with no production adapters."""
-    from agentdesk.capabilities import GATES
-    from agentdesk.probe.core import GateResult, UNKNOWN
+    from nexuusbot.capabilities import GATES
+    from nexuusbot.probe.core import GateResult, UNKNOWN
 
     def runner_for(key: str, number: int, title: str):
         """Return an honest fixture result without probing the machine."""
@@ -2152,8 +2152,8 @@ def _boot_desk(condition: str, tmp_root: Path) -> dict:
     data_dir = tmp_root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     keychain = tmp_root / "keychain.json"
-    from agentdesk.keys.secrets import KeychainSecrets
-    from agentdesk.server import app as server_app
+    from nexuusbot.keys.secrets import KeychainSecrets
+    from nexuusbot.server import app as server_app
 
     server = None
     thread = None
@@ -2468,7 +2468,7 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
             raise AuditError(f"retesting the overflow fixture answered {response.status}")
         notes.append("overflow fixture installed")
     if condition in ("full", "long-values", "busy"):
-        from agentdesk.server import demo_data
+        from nexuusbot.server import demo_data
 
         sample = demo_data.sample_workbook_path()
         if not sample.is_file():
@@ -2497,8 +2497,8 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
 
 def _busy_gate_results() -> list:
     """Synthetic capability cards for layout coverage, never machine verdicts."""
-    from agentdesk.capabilities import GATES
-    from agentdesk.probe.core import FAIL, PASS, GateResult
+    from nexuusbot.capabilities import GATES
+    from nexuusbot.probe.core import FAIL, PASS, GateResult
 
     fixtures = {
         "exec-user-space": (PASS, "Synthetic fixture: a user-space command completed."),
@@ -3851,7 +3851,7 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
 def _condition_worker(args, condition: str, run_dir: Path) -> int:
     """Run one condition in this process: boot, seed, browse, write JSON.
 
-    A child process per condition keeps agentdesk's module-level state and
+    A child process per condition keeps nexuusbot's module-level state and
     environment isolated, which is what makes four conditions in one run
     honest. Returns a process exit code.
     """
@@ -4161,7 +4161,7 @@ def _worst_source(group: dict) -> str:
 def _source_lines() -> list[tuple[str, int, str]]:
     """Every source line worth searching for a class or className."""
     lines: list[tuple[str, int, str]] = []
-    roots = [ROOT / "frontend" / "src", ROOT / "src" / "agentdesk" / "server"]
+    roots = [ROOT / "frontend" / "src", ROOT / "src" / "nexuusbot" / "server"]
     suffixes = {".tsx", ".ts", ".css", ".py"}
     for base in roots:
         if not base.exists():

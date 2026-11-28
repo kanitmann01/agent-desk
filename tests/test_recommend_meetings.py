@@ -22,16 +22,16 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters, CalendarBridge
-from agentdesk.inbox.core import STATUS_DISMISSED
-from agentdesk.inbox.store import InboxStore
-from agentdesk.ledger.store import Ledger
-from agentdesk.memory.core import EntitySummary, Fact
-from agentdesk.memory.store import MemoryStore
-from agentdesk.recommend.builder import RecommendationBuilder
-from agentdesk.recommend.rules import meeting_candidates
-from agentdesk.server import demo_data
-from agentdesk.settings import SettingsStore
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters, CalendarBridge
+from nexuusbot.inbox.core import STATUS_DISMISSED
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.memory.core import EntitySummary, Fact
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.recommend.builder import RecommendationBuilder
+from nexuusbot.recommend.rules import meeting_candidates
+from nexuusbot.server import demo_data
+from nexuusbot.settings import SettingsStore
 
 MORNING = datetime.datetime(2026, 11, 20, 9, 0, 0)
 

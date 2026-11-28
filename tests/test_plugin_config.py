@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from agentdesk.plugins.config import ConfigError, InstanceStore, MAX_INSTANCE_CAP
-from agentdesk.plugins.preview import preview_table
-from agentdesk.plugins.suggest import (
+from nexuusbot.plugins.config import ConfigError, InstanceStore, MAX_INSTANCE_CAP
+from nexuusbot.plugins.preview import preview_table
+from nexuusbot.plugins.suggest import (
     DISCLOSURE_HEADERS,
     DISCLOSURE_ROWS,
     build_suggestion_request,
     propose_columns,
 )
-from agentdesk.plugins.tracker import pace_line, read_tracker
+from nexuusbot.plugins.tracker import pace_line, read_tracker
 from tests.plugin_fixtures import write_alias_plugin
 
 
@@ -124,7 +124,7 @@ def test_dismiss_does_not_write_and_confirm_records_the_suggestion(tmp_path):
 
 
 def test_the_heuristic_picks_the_numeric_column_and_the_grouping_label():
-    from agentdesk.plugins.suggest import heuristic
+    from nexuusbot.plugins.suggest import heuristic
     choice = heuristic(
         ["Region", "Booked"],
         [["East", "10"], ["East", "40"], ["West", "4"]],
@@ -214,8 +214,8 @@ def test_propose_columns_uses_the_model_reply_and_ignores_a_failure(tmp_path):
 
 
 def test_two_aliases_expand_to_their_tracker_instances(tmp_path):
-    from agentdesk.plugins.execute import PluginWidgetRunner
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.execute import PluginWidgetRunner
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -260,7 +260,7 @@ def test_preview_reads_only_the_staged_workbook(tmp_path):
 def test_the_fixture_plugin_is_a_valid_config_backed_plugin():
     """The qbr-pack fixture stays honest: the shared validator accepts it,
     it declares the workbook kind, and it is not the historical tracker."""
-    from agentdesk.validator.core import validate_plugin
+    from nexuusbot.validator.core import validate_plugin
 
     root = Path(__file__).resolve().parents[1]
     fixture = root / "tests" / "fixtures" / "plugins" / "qbr-pack"
@@ -275,8 +275,8 @@ def test_the_setup_flow_serves_a_plugin_that_is_not_the_tracker(tmp_path):
     """The pick/stage/preview/confirm flow is not pinned to one plugin id:
     the fixture plugin's config lands under its own namespace and never
     under the historical tracker's."""
-    from agentdesk.plugins import setup_flow
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins import setup_flow
+    from nexuusbot.plugins.runtime import PluginRuntime
     from tests import excel_fixtures
 
     workspace = tmp_path / "workspace"
@@ -366,7 +366,7 @@ def test_a_second_config_backed_plugin_gets_its_own_instance_cards(tmp_path):
     """The runtime expands every workbook-kind plugin into per-instance
     card keys, one setup wireframe before any confirm, and a fresh card
     bound to that plugin's own confirmed file."""
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
     from tests import excel_fixtures
 
     workspace = tmp_path / "workspace"
@@ -673,7 +673,7 @@ def test_propose_columns_keeps_a_chart_and_drops_row_indexes():
 
 
 def test_the_heuristic_picks_a_date_column_when_the_sample_parses():
-    from agentdesk.plugins.suggest import heuristic
+    from nexuusbot.plugins.suggest import heuristic
     choice = heuristic(
         ["Person", "Week", "Points"],
         [["Ada", "2026-01-06", "3"], ["Bea", "2026-01-13", "5"]],
@@ -687,7 +687,7 @@ def test_the_heuristic_picks_a_date_column_when_the_sample_parses():
 def test_suggest_with_no_model_sends_nothing(tmp_path):
     from types import SimpleNamespace
     from tests import excel_fixtures
-    from agentdesk.plugins.setup_flow import suggest
+    from nexuusbot.plugins.setup_flow import suggest
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     book = workspace / "q4.xlsx"

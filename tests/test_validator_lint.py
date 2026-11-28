@@ -7,7 +7,7 @@ import json
 import pytest
 
 from .test_validator_support import REPO_ROOT, VALID_MANIFEST, write_plugin
-from agentdesk.validator import validate_plugin
+from nexuusbot.validator import validate_plugin
 
 
 def failures(verdict):

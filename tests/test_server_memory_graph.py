@@ -23,7 +23,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.memory.embed import encode_embedding
+from nexuusbot.memory.embed import encode_embedding
 
 
 @pytest.fixture()
@@ -191,8 +191,8 @@ def test_the_memory_page_carries_the_graph_link(booted, auth):
 def test_a_locked_store_renders_the_memory_banner_instead(booted, auth):
     import sqlite3
 
-    from agentdesk.memory.crypto import make_marker
-    from agentdesk.memory.store import MemoryStore, ensure_schema
+    from nexuusbot.memory.crypto import make_marker
+    from nexuusbot.memory.store import MemoryStore, ensure_schema
 
     key = bytes(range(32))
     conn = sqlite3.connect(":memory:", check_same_thread=False)

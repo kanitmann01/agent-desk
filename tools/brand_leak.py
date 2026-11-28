@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.presentations.leak import load_hashes, pack_roots, scan  # noqa: E402
+from nexuusbot.presentations.leak import load_hashes, pack_roots, scan  # noqa: E402
 
 
 def main() -> int:

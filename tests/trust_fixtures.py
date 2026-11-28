@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.trust.canonical import b64u_encode, canonical_bytes
-from agentdesk.trust.ed25519 import public_key, sign
+from nexuusbot.trust.canonical import b64u_encode, canonical_bytes
+from nexuusbot.trust.ed25519 import public_key, sign
 
 NOW = datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
 NOW_ISO = NOW.isoformat()
@@ -162,12 +162,12 @@ def release_payload(plugin_id: str, version: str, digest: str, *,
 
 def write_release(trust_dir: Path, plugin_id: str, version: str, payload: dict,
                   publisher_key: Key, *, tamper: bool = False) -> dict:
-    from agentdesk.trust.canonical import envelope
+    from nexuusbot.trust.canonical import envelope
 
     envelope_doc = envelope(payload, publisher_key.key_id, publisher_key.seed,
                             signed_at=NOW_ISO)
     if tamper:
-        from agentdesk.trust.canonical import b64u_decode, b64u_encode
+        from nexuusbot.trust.canonical import b64u_decode, b64u_encode
 
         raw = bytearray(b64u_decode(envelope_doc["signature"]))
         raw[0] ^= 1
@@ -189,7 +189,7 @@ def policy_bundle_fields(**overrides) -> dict:
     """A complete signed-policy policy block, starting from the built-in posture."""
     from dataclasses import asdict
 
-    from agentdesk.marketplace.policy import default_policy
+    from nexuusbot.marketplace.policy import default_policy
 
     fields = {name: value for name, value in asdict(default_policy()).items()
               if name not in ("signatureStatus", "source")}
@@ -201,7 +201,7 @@ def policy_bundle(signer: Key, *, fields: dict | None = None, issued_at=NOW,
                   expires_at: str = FUTURE, revocation_epoch: int = 0,
                   key_id: str | None = None) -> dict:
     """A signed policy bundle for the test signer (deterministic Ed25519)."""
-    from agentdesk.marketplace.signed_policy import sign_policy_bundle
+    from nexuusbot.marketplace.signed_policy import sign_policy_bundle
 
     return sign_policy_bundle(
         fields if fields is not None else policy_bundle_fields(),
@@ -217,7 +217,7 @@ def write_policy_bundle(workspace: Path, signer: Key, *, fields: dict | None = N
                         issued_at=NOW, expires_at: str = FUTURE,
                         revocation_epoch: int = 0, key_id: str | None = None) -> dict:
     """Write a signed bundle to <workspace>/marketplace/policy.json."""
-    from agentdesk.marketplace.signed_policy import sign_policy_bundle
+    from nexuusbot.marketplace.signed_policy import sign_policy_bundle
 
     bundle = sign_policy_bundle(
         fields if fields is not None else policy_bundle_fields(),

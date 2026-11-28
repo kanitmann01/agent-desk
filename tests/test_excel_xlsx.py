@@ -15,8 +15,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.excel.core import WorkbookUnreadable
-from agentdesk.excel.xlsx import parse_workbook_bytes
+from nexuusbot.excel.core import WorkbookUnreadable
+from nexuusbot.excel.xlsx import parse_workbook_bytes
 from excel_fixtures import base_workbook, make_xlsx, make_xlsx_reversed_tabs
 
 

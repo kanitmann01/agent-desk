@@ -20,8 +20,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.repetition import curator
-from agentdesk.repetition.skills import SkillStore
+from nexuusbot.repetition import curator
+from nexuusbot.repetition.skills import SkillStore
 
 NOW = datetime(2026, 11, 21, 9, 0, 0, tzinfo=timezone.utc)
 NOW_TS = NOW.timestamp()
@@ -227,9 +227,9 @@ def test_the_curator_step_records_ledger_entries_and_the_audit_row(tmp_path):
     one skill.curated audit row with the counts, and the switch off means
     no curator runs at all."""
     import server_harness
-    from agentdesk.agentloop.loop import LoopContext
-    from agentdesk.assistant import audit as audit_store
-    from agentdesk.server.app import curator_step_run
+    from nexuusbot.agentloop.loop import LoopContext
+    from nexuusbot.assistant import audit as audit_store
+    from nexuusbot.server.app import curator_step_run
 
     skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False),
                         lambda: NOW_TS)
@@ -270,7 +270,7 @@ def test_the_curator_step_records_ledger_entries_and_the_audit_row(tmp_path):
 
         # The switch off means the step is not enabled at all, and the
         # interval the run reset means the next pass is a week away.
-        from agentdesk.agentloop import loop as loop_module
+        from nexuusbot.agentloop import loop as loop_module
 
         server.settings.set("skills_curator", False)
         curator_step = next(s for s in loop_module.STEPS if s.name == "curator")
@@ -284,7 +284,7 @@ def test_the_curator_step_records_ledger_entries_and_the_audit_row(tmp_path):
 
 def _due_ctx(booted, skills):
     """A LoopContext with the curator interval due right now."""
-    from agentdesk.agentloop.loop import LoopContext
+    from nexuusbot.agentloop.loop import LoopContext
 
     skills.set_curator_state("last_run_at",
                              (NOW - timedelta(days=8)).isoformat())
@@ -300,7 +300,7 @@ def test_the_state_undo_restores_the_active_flag_both_ways(tmp_path):
     and running, and a deactivated skill the curator archived comes back
     with its flag still off (never resurrected by set_state's rule)."""
     import server_harness
-    from agentdesk.server.app import curator_step_run
+    from nexuusbot.server.app import curator_step_run
 
     def boot(skills):
         booted = server_harness.Booted(

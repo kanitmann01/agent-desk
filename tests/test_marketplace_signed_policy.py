@@ -23,14 +23,14 @@ from trust_fixtures import (
     write_policy_bundle,
 )
 
-from agentdesk.marketplace import signed_policy
-from agentdesk.marketplace.policy import (
+from nexuusbot.marketplace import signed_policy
+from nexuusbot.marketplace.policy import (
     default_policy,
     evaluate,
     load_effective_policy,
     policy_payload,
 )
-from agentdesk.marketplace.signed_policy import (
+from nexuusbot.marketplace.signed_policy import (
     PolicyBundleError,
     fingerprint,
     load_anchor,
@@ -437,7 +437,7 @@ def test_diff_shape_is_sorted_and_copies_arrays():
     after = policy_bundle_fields(mode="open", riskCeiling="T2",
                                  allowedPublishers=["zeta", "acme"],
                                  networkAllowlist=["api.example.com"])
-    from agentdesk.marketplace.policy import Policy
+    from nexuusbot.marketplace.policy import Policy
 
     diff = policy_diff(before, Policy(**after))
 

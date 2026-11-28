@@ -19,7 +19,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.peers.store import (  # noqa: E402
+from nexuusbot.peers.store import (  # noqa: E402
     CODE_TTL_S,
     MAX_PAIRING_MISSES,
     PeerError,

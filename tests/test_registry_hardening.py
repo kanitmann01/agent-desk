@@ -17,8 +17,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.registry.index import RegistryIndexError, load_index
-from agentdesk.registry.install import (
+from nexuusbot.registry.index import RegistryIndexError, load_index
+from nexuusbot.registry.install import (
     RegistryError,
     install_from_registry,
     read_lock,
@@ -184,7 +184,7 @@ def test_registry_root_document_is_seeded():
     assert index is not None
     ids = {entry.id for entry in index.plugins}
     assert ids == {"excel-report", "competitor-watch", "presentation-starter"}
-    from agentdesk.registry.install import tree_digest
+    from nexuusbot.registry.install import tree_digest
     for entry in index.plugins:
         release = entry.release_for(entry.latest)
         assert release is not None, entry.id
@@ -208,7 +208,7 @@ def test_tree_digest_walks_in_posix_string_order(tmp_path):
     developer's local run."""
     import hashlib
 
-    from agentdesk.registry.install import tree_digest
+    from nexuusbot.registry.install import tree_digest
 
     plugin_dir = tmp_path / "plugin"
     (plugin_dir / "skills" / "recap").mkdir(parents=True)
@@ -235,7 +235,7 @@ def test_tree_digest_walks_in_posix_string_order(tmp_path):
 def test_empty_base_index_means_nothing_published_yet(tmp_path):
     """The workflow writes {} when the base branch has no index: that is
     the clean first-publish case, not a broken base."""
-    from agentdesk.registry.ci import review_registry_changes
+    from nexuusbot.registry.ci import review_registry_changes
 
     registry_root = tmp_path / "registry"
     registry_root.mkdir()

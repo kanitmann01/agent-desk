@@ -21,7 +21,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
+from nexuusbot.assistant import audit as audit_store
 
 
 class CaptureLlm:
@@ -42,7 +42,7 @@ def env(request):
     and a checkout without it. The suite's default points the build
     directory nowhere, so the island posture is switched on the way the
     existing page tests switch it."""
-    from agentdesk.server import memory_api
+    from nexuusbot.server import memory_api
 
     if request.param:
         patch = request.getfixturevalue("monkeypatch")
@@ -145,7 +145,7 @@ def test_the_page_offers_forget_everything_as_a_form_to_its_own_address(env, aut
 
 
 def test_a_first_post_shows_the_confirmation_and_deletes_nothing(env, auth):
-    from agentdesk.memory import loop
+    from nexuusbot.memory import loop
 
     memory = env.server.memory
     _add(env, auth, "The Acme renewal is due December 15.")
@@ -184,7 +184,7 @@ def test_a_first_post_shows_the_confirmation_and_deletes_nothing(env, auth):
 def _a_bank_with_everything_derived(env, auth):
     """Two standing facts, one a replaced older value, their names, a summary
     and an original excerpt: something in every table a fact feeds."""
-    from agentdesk.memory import loop
+    from nexuusbot.memory import loop
 
     memory = env.server.memory
     _add(env, auth, "The Acme renewal is due December 1.")
@@ -301,7 +301,7 @@ def test_the_encryption_key_is_untouched_on_a_sealed_bank(tmp_path):
     import sqlite3
     import time
 
-    from agentdesk.memory.store import MemoryStore
+    from nexuusbot.memory.store import MemoryStore
 
     db = tmp_path / "memory.sqlite3"
     key_path = tmp_path / "memory.key"
@@ -367,7 +367,7 @@ def test_review_cards_waiting_on_the_forgotten_excerpts_are_rejected():
     import sqlite3
     import time
 
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.settings import SettingsStore
 
     # Review first: a turn stages its facts as cards instead of saving them.
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
@@ -396,7 +396,7 @@ def _review_first_boot():
     import sqlite3
     import time
 
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.settings import SettingsStore
 
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
     settings.set("memory_auto_approve", False)
@@ -458,7 +458,7 @@ class _ScriptedReflector:
 
 
 def test_waiting_reflection_cards_are_rejected_with_the_facts(env, auth):
-    from agentdesk.memory.reflect import ObservationDraft
+    from nexuusbot.memory.reflect import ObservationDraft
 
     memory = env.server.memory
     first = _add(env, auth, "Maya left Acme.")
@@ -483,8 +483,8 @@ def test_a_locked_store_answers_a_form_post_with_the_locked_page_never_json(tmp_
     import sqlite3
     import time
 
-    from agentdesk.memory.crypto import load_key
-    from agentdesk.memory.store import MemoryStore
+    from nexuusbot.memory.crypto import load_key
+    from nexuusbot.memory.store import MemoryStore
 
     # A bank sealed in a previous life, reopened without its key.
     db = tmp_path / "memory.sqlite3"

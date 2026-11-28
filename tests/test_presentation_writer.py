@@ -17,9 +17,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
-from agentdesk.presentations.writer import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.presentations.ooxml import build_shell, pack_zip, read_parts
+from nexuusbot.presentations.writer import (
     content_point_size, outline_for, package_problems, slide_texts, write_deck,
 )
 
@@ -220,7 +220,7 @@ def test_master_text_styles_set_the_title_and_body_size():
     assert "sz=" not in title
     assert "sz=" not in body
     assert content_point_size(shell, RECIPE) == 32
-    from agentdesk.presentations.writer import _resolved_pt, _find_layout, _placeholder
+    from nexuusbot.presentations.writer import _resolved_pt, _find_layout, _placeholder
     layout = _find_layout(parts, "Content")
     # The written package still has the master styles. Resolve from the shell.
     shell_parts = read_parts(shell)

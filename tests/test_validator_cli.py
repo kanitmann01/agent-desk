@@ -13,7 +13,7 @@ from .test_validator_support import VALID_MANIFEST, fixture, run_cli, write_plug
 def run_cli_decoded(*args: str) -> subprocess.CompletedProcess:
     """run_cli variant that decodes child output as UTF-8 (what main() emits)."""
     return subprocess.run(
-        [sys.executable, "-m", "agentdesk.validator", *args],
+        [sys.executable, "-m", "nexuusbot.validator", *args],
         capture_output=True,
         encoding="utf-8",
         errors="replace",
@@ -32,7 +32,7 @@ def run_cli_legacy_stdio(*args: str) -> subprocess.CompletedProcess:
     for var in ("PYTHONUTF8", "PYTHONIOENCODING"):
         env.pop(var, None)
     return subprocess.run(
-        [sys.executable, "-m", "agentdesk.validator", *args],
+        [sys.executable, "-m", "nexuusbot.validator", *args],
         capture_output=True,
         encoding="utf-8",
         errors="replace",
@@ -73,7 +73,7 @@ def test_cli_json_output_is_lf_only_bytes():
     """--json must be byte-deterministic across CI runners: LF only."""
     for name in ("valid-manifest", "hash-mismatch"):
         result = subprocess.run(
-            [sys.executable, "-m", "agentdesk.validator", "--json", str(fixture(name))],
+            [sys.executable, "-m", "nexuusbot.validator", "--json", str(fixture(name))],
             capture_output=True,
             env=test_validator_support.cli_env(),
             cwd=str(test_validator_support.REPO_ROOT),
@@ -120,7 +120,7 @@ def test_cli_accepts_uppercase_zip_suffix(tmp_path):
 
 
 def test_cli_json_matches_library_verdict(tmp_path):
-    from agentdesk.validator import validate_plugin
+    from nexuusbot.validator import validate_plugin
 
     for name in ("valid-manifest", "hash-mismatch", "shell-permission"):
         result = run_cli("--json", str(fixture(name)))
@@ -134,7 +134,7 @@ def test_cli_reports_every_failure_code_fixture():
 
 
 def test_main_is_exported_and_callable():
-    from agentdesk.validator import main
+    from nexuusbot.validator import main
 
     assert callable(main)
 
@@ -169,7 +169,7 @@ def test_main_reconfigures_output_streams_to_utf8(tmp_path, monkeypatch):
     """
     import io
 
-    from agentdesk.validator import cli
+    from nexuusbot.validator import cli
 
     out_buf, err_buf = io.BytesIO(), io.BytesIO()
     out = io.TextIOWrapper(out_buf, encoding="cp1252")

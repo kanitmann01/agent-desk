@@ -14,14 +14,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.calendar import store
-from agentdesk.calendar.breakdown import parse_breakdown
-from agentdesk.calendar.core import (
+from nexuusbot.calendar import store
+from nexuusbot.calendar.breakdown import parse_breakdown
+from nexuusbot.calendar.core import (
     CalendarUnreadable,
     parse_calendar_document,
     pick_key_event,
 )
-from agentdesk.calendar.watcher import Adapters, CalendarBridge
+from nexuusbot.calendar.watcher import Adapters, CalendarBridge
 
 TODAY = datetime(2026, 11, 11, 9, 0, 0).astimezone()
 
@@ -306,7 +306,7 @@ def test_early_and_late_utc_meetings_count_today_and_show_local_clock(tmp_path):
     carries the UTC Z shape the sync flow actually writes."""
     import json as json_mod
 
-    from agentdesk.server.commitments import render_commitments_widget
+    from nexuusbot.server.commitments import render_commitments_widget
 
     now = datetime(2026, 11, 11, 1, 0, 0).astimezone()
     early = now.replace(hour=0, minute=30, second=0, microsecond=0)

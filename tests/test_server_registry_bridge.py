@@ -187,7 +187,7 @@ def test_plugins_page_installs_and_manages_via_forms(tmp_path):
 
 
 def test_registry_path_setting_round_trip(tmp_path, monkeypatch):
-    from agentdesk.registry import source as registry_source
+    from nexuusbot.registry import source as registry_source
 
     monkeypatch.delenv("AGENTDESK_REGISTRY", raising=False)
     monkeypatch.setattr(registry_source, "discover_repo_registry",
@@ -219,7 +219,7 @@ def test_registry_path_setting_round_trip(tmp_path, monkeypatch):
 
 
 def test_registry_path_rejects_a_folder_without_index(tmp_path, monkeypatch):
-    from agentdesk.registry import source as registry_source
+    from nexuusbot.registry import source as registry_source
 
     monkeypatch.delenv("AGENTDESK_REGISTRY", raising=False)
     monkeypatch.setattr(registry_source, "discover_repo_registry",

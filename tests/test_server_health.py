@@ -20,13 +20,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import agentdesk
+import nexuusbot
 import server_harness
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
 from excel_fixtures import base_workbook
 
 NOW = datetime.now().astimezone()
@@ -53,7 +53,7 @@ def test_health_reports_app_version_sources_and_uptime(booted):
     assert resp_headers["Content-Type"].startswith("application/json")
     payload = json.loads(body)
     assert payload["app"] == "agent-desk"
-    assert payload["version"] == agentdesk.__version__
+    assert payload["version"] == nexuusbot.__version__
     assert payload["uptime_seconds"] >= 0
 
 

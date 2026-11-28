@@ -18,10 +18,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.agentloop.schedule import claim_run, release_run
-from agentdesk.feeder.contract import MANUAL_CAUSE, UnavailableCollector
-from agentdesk.feeder.runner import OutlookFeeder
-from agentdesk.mail.core import Message, parse_eml
+from nexuusbot.agentloop.schedule import claim_run, release_run
+from nexuusbot.feeder.contract import MANUAL_CAUSE, UnavailableCollector
+from nexuusbot.feeder.runner import OutlookFeeder
+from nexuusbot.mail.core import Message, parse_eml
 
 SAMPLE_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc).timestamp()
 DAY_S = 24 * 60 * 60
@@ -346,10 +346,10 @@ def test_run_once_releases_the_lock_after_success_and_after_a_failure(tmp_path):
 # -- the privacy seam -----------------------------------------------------
 
 
-FEEDER_SRC = ROOT / "src" / "agentdesk" / "feeder"
+FEEDER_SRC = ROOT / "src" / "nexuusbot" / "feeder"
 FORBIDDEN_ROOTS = {
     "ctypes", "http", "requests", "socket", "subprocess",
-    "urllib", "win32api", "win32com", "winreg", "agentdesk.llm",
+    "urllib", "win32api", "win32com", "winreg", "nexuusbot.llm",
 }
 
 

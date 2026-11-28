@@ -25,10 +25,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.memory.embed import encode_embedding
-from agentdesk.memory.hybrid import rank_hybrid
-from agentdesk.probe.core import FAIL, PASS, UNKNOWN, GateResult
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.memory.embed import encode_embedding
+from nexuusbot.memory.hybrid import rank_hybrid
+from nexuusbot.probe.core import FAIL, PASS, UNKNOWN, GateResult
 
 
 class ScriptedEmbeddingsEndpoint:

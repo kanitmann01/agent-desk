@@ -23,8 +23,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.engine import TurnResult
-from agentdesk.server import app as server_app
+from nexuusbot.engine import TurnResult
+from nexuusbot.server import app as server_app
 from server_harness import Booted, FakeEngine, _engine_actions
 
 FACT = "The Harborlight Freight renewal is settled for this quarter."

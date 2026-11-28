@@ -22,32 +22,32 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import sqlite3
 import time
 
-from agentdesk.agents.store import AgentRunStore
-from agentdesk.assistant import audit as audit_store
-from agentdesk.assistant.research_store import ResearchStore
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.capabilities import GATES, CapabilitiesCache
-from agentdesk.consents import ConsentStore
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.inbox.store import InboxStore
-from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
-from agentdesk.keys.store import KeysStore
-from agentdesk.layout import LayoutStore
-from agentdesk.ledger.store import Ledger
-from agentdesk.mail.store import MailStore
-from agentdesk.memory.profile import LearnedProfileStore
-from agentdesk.memory.store import MemoryStore
-from agentdesk.engine import Action, TurnResult
-from agentdesk.peers.store import PeerStore
-from agentdesk.plugins.runtime import PluginRuntime
-from agentdesk.probe.core import UNKNOWN, GateResult
-from agentdesk.repetition.activity import ActivityLog
-from agentdesk.repetition.skills import SkillStore
-from agentdesk.server import app as server_app
-from agentdesk.settings import SettingsStore
-from agentdesk.wizard.core import WizardStore
+from nexuusbot.agents.store import AgentRunStore
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.assistant.research_store import ResearchStore
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.capabilities import GATES, CapabilitiesCache
+from nexuusbot.consents import ConsentStore
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain
+from nexuusbot.keys.store import KeysStore
+from nexuusbot.layout import LayoutStore
+from nexuusbot.ledger.store import Ledger
+from nexuusbot.mail.store import MailStore
+from nexuusbot.memory.profile import LearnedProfileStore
+from nexuusbot.memory.store import MemoryStore
+from nexuusbot.engine import Action, TurnResult
+from nexuusbot.peers.store import PeerStore
+from nexuusbot.plugins.runtime import PluginRuntime
+from nexuusbot.probe.core import UNKNOWN, GateResult
+from nexuusbot.repetition.activity import ActivityLog
+from nexuusbot.repetition.skills import SkillStore
+from nexuusbot.server import app as server_app
+from nexuusbot.settings import SettingsStore
+from nexuusbot.wizard.core import WizardStore
 
 
 def _inert_audit():
@@ -213,7 +213,7 @@ class FakeEngine:
 
 def _engine_actions(**calls: dict) -> tuple[Action, ...]:
     """Build boundary actions from keyword tool calls, undo kinds declared."""
-    from agentdesk.engine import tool_by_name
+    from nexuusbot.engine import tool_by_name
 
     actions = []
     for name, args in calls.items():
@@ -224,7 +224,7 @@ def _engine_actions(**calls: dict) -> tuple[Action, ...]:
 
 
 class Booted:
-    """A running AgentDeskServer plus small helpers for raw requests.
+    """A running NexuusBotServer plus small helpers for raw requests.
 
     Keyword arguments pass straight through to create_server, so tests can
     inject their own excel watch, calendar bridge and picker adapter.

@@ -22,13 +22,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import excel_fixtures  # noqa: E402
 
-from agentdesk.plugins.execute import BINDINGS, PluginWidgetRunner  # noqa: E402
-from agentdesk.plugins.render import ELEMENT_KINDS, render_sample  # noqa: E402
-from agentdesk.plugins.runtime import PluginRuntime  # noqa: E402
-from agentdesk.registry.ci import review_registry_changes  # noqa: E402
-from agentdesk.registry.index import load_index  # noqa: E402
-from agentdesk.registry.install import tree_digest  # noqa: E402
-from agentdesk.validator.core import validate_plugin  # noqa: E402
+from nexuusbot.plugins.execute import BINDINGS, PluginWidgetRunner  # noqa: E402
+from nexuusbot.plugins.render import ELEMENT_KINDS, render_sample  # noqa: E402
+from nexuusbot.plugins.runtime import PluginRuntime  # noqa: E402
+from nexuusbot.registry.ci import review_registry_changes  # noqa: E402
+from nexuusbot.registry.index import load_index  # noqa: E402
+from nexuusbot.registry.install import tree_digest  # noqa: E402
+from nexuusbot.validator.core import validate_plugin  # noqa: E402
 
 REGISTRY = ROOT / "registry"
 PLUGINS = REGISTRY / "plugins"
@@ -135,7 +135,7 @@ def test_index_pins_match_the_published_trees():
 def test_listing_payload_carries_the_whole_library():
     """The /plugins page's listing payload names both entries with their
     pinned releases, the payload the registry bridge serves."""
-    from agentdesk.registry.source import registry_listing
+    from nexuusbot.registry.source import registry_listing
 
     listing = registry_listing(REGISTRY)
     assert listing["ok"] is True, listing
@@ -207,9 +207,9 @@ def _excel_runner(workspace: Path, tmp_path: Path, clock: list[float]):
     """The real excel pipeline (shadow copy, stdlib parser) over a real
     .xlsx, with the shadow dir kept inside the test's temp tree. The
     clock is a one-cell list the test moves between windows."""
-    from agentdesk.excel import shadow as shadow_mod
-    from agentdesk.excel import xlsx as xlsx_mod
-    from agentdesk.excel.watcher import Adapters
+    from nexuusbot.excel import shadow as shadow_mod
+    from nexuusbot.excel import xlsx as xlsx_mod
+    from nexuusbot.excel.watcher import Adapters
 
     return PluginWidgetRunner(
         workspace, adapters=Adapters(

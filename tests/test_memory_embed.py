@@ -29,13 +29,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import (
+from nexuusbot.llm import (
     NO_ENDPOINT_CAUSE,
     NO_SCHEME_CAUSE,
     NOT_API_BASE_CAUSE,
     REDIRECT_CAUSE,
 )
-from agentdesk.memory.embed import (
+from nexuusbot.memory.embed import (
     DEFAULT_EMBED_MODEL,
     EmbedderUnavailable,
     EndpointEmbedder,
@@ -45,7 +45,7 @@ from agentdesk.memory.embed import (
     encode_embedding,
     rank,
 )
-from agentdesk.settings import SettingsStore
+from nexuusbot.settings import SettingsStore
 
 
 # -- codecs (src/embed.ts encodeEmbedding / decodeEmbedding) -----------------
@@ -355,8 +355,8 @@ def test_settings_embedder_defaults_to_the_documented_model():
 def test_the_settings_default_and_the_embed_constant_agree():
     # The default lives in settings.py (the row's factory value) and in
     # memory/embed.py (the adapter's fallback); the two must never drift.
-    from agentdesk.memory.embed import DEFAULT_EMBED_MODEL as embed_default
-    from agentdesk.settings import EMBEDDINGS_MODEL_DEFAULT
+    from nexuusbot.memory.embed import DEFAULT_EMBED_MODEL as embed_default
+    from nexuusbot.settings import EMBEDDINGS_MODEL_DEFAULT
 
     assert embed_default == EMBEDDINGS_MODEL_DEFAULT
 

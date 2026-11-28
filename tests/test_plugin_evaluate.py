@@ -3,9 +3,9 @@
 import json
 from types import SimpleNamespace
 
-from agentdesk.plugins.config import InstanceStore
-from agentdesk.plugins.setup_flow import evaluate
-from agentdesk.plugins.suggest import DISCLOSURE_ROWS, build_evaluation_request, evaluate_choice
+from nexuusbot.plugins.config import InstanceStore
+from nexuusbot.plugins.setup_flow import evaluate
+from nexuusbot.plugins.suggest import DISCLOSURE_ROWS, build_evaluation_request, evaluate_choice
 
 
 def _request(rows=None):

@@ -6,7 +6,7 @@
 @import "@fontsource/geist-mono/400.css";
 
 /* The Memory page graph. Server-page tokens only (the theme blocks in
-   src/agentdesk/server/pages.py STYLES): surfaces, hairline, the ink
+   src/nexuusbot/server/pages.py STYLES): surfaces, hairline, the ink
    ramp, the one accent, and the --kind-* roles derived from them. No
    colour literal lives here. One bento language with the dashboard:
    1px hairlines, 8px cells, Geist for words, Geist Mono for figures. */

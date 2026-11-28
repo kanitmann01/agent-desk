@@ -11,7 +11,7 @@ where python >nul 2>nul
 if %errorlevel%==0 (
   python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
   if not errorlevel 1 (
-    python -m agentdesk.probe %*
+    python -m nexuusbot.probe %*
     goto :end
   )
 )
@@ -19,7 +19,7 @@ where py >nul 2>nul
 if %errorlevel%==0 (
   py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
   if not errorlevel 1 (
-    py -3 -m agentdesk.probe %*
+    py -3 -m nexuusbot.probe %*
     goto :end
   )
 )

@@ -83,8 +83,8 @@ README_INSTRUCTION_TARGETS = (
     "tools/ci_local.py",
     "tools/layout_audit.py",
     "tools/face_walkthrough.py",
-    "src/agentdesk/feeder",
-    "src/agentdesk/server",
+    "src/nexuusbot/feeder",
+    "src/nexuusbot/server",
     "docs/readme/dashboard.png",
     "docs/readme/memory.png",
     "docs/readme/marketplace.png",
@@ -240,10 +240,10 @@ def test_the_keychain_sentence_claims_only_what_the_code_does(monkeypatch):
                    "legacy settings rows", "masked hints"):
         assert marker in bullet, f"the keychain sentence lost its {marker!r} claim"
 
-    from agentdesk.config import PREFIX, parse_env_file
-    from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain, SERVICE
-    from agentdesk.keys.store import SCHEMA
-    from agentdesk.llm import effective_llm_config
+    from nexuusbot.config import PREFIX, parse_env_file
+    from nexuusbot.keys.secrets import KeychainSecrets, MemoryKeychain, SERVICE
+    from nexuusbot.keys.store import SCHEMA
+    from nexuusbot.llm import effective_llm_config
 
     # "where a usable keychain is available": the retained service, and a
     # usable backend stores and returns the secret.
@@ -268,7 +268,7 @@ def test_the_keychain_sentence_claims_only_what_the_code_does(monkeypatch):
     assert missing.fetch("connection-1") is None
 
     # the save route refuses rather than keep a connection with no secret
-    app_source = _text(ROOT / "src" / "agentdesk" / "server" / "app.py")
+    app_source = _text(ROOT / "src" / "nexuusbot" / "server" / "app.py")
     assert "not server.keychain.store(" in app_source
 
     # "plaintext configuration": the optional config.env file carries the
@@ -379,6 +379,34 @@ def test_the_readme_labels_its_retained_names_as_compatibility_contracts():
                      "data folder"):
         assert retained in text, (
             f"the label does not name the retained {retained!r}"
+        )
+
+
+def test_the_developer_section_names_the_package_identity():
+    """Ticket 08 (issue 362): the README names the distribution, the
+    import path and the alias, and promises only the import path.
+
+    The compatibility promise is the old import path (`import
+    agentdesk` and the five old module commands), never the old
+    distribution name as an install alias: no install instruction may
+    name it.
+    """
+    text = _normalized(README)
+    start = text.index("## Development")
+    section = text[start:text.index("## Documentation and IT review")]
+    for needle in ("nexuus-bot", "nexuusbot", "import agentdesk",
+                   "python -m agentdesk.server",
+                   "python -m nexuusbot"):
+        assert needle in section, (
+            f"the developer section does not name {needle!r}"
+        )
+    assert "same module objects" in section, (
+        "the alias promise does not say the modules are the same objects"
+    )
+    for install_alias in ("install agent-desk", "pip install agent-desk"):
+        assert install_alias not in text, (
+            f"the README promises {install_alias!r}, an install alias "
+            "the project never offers"
         )
 
 

@@ -1,4 +1,4 @@
-/* The Memory page. Server-page tokens only (src/agentdesk/server/pages.py
+/* The Memory page. Server-page tokens only (src/nexuusbot/server/pages.py
    theme blocks): surfaces, hairline, the ink ramp, the one accent. No
    colour literal lives here, so Unkey, Coforge and Momentuum blue all
    come from the same rules. One bento language with the dashboard:

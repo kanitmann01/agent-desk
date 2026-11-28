@@ -4,15 +4,15 @@ import ast
 from pathlib import Path
 
 from . import test_validator_support  # noqa: F401  (puts src/ on sys.path)
-import agentdesk.validator
-from agentdesk.validator.core import FAILURE_CODES
+import nexuusbot.validator
+from nexuusbot.validator.core import FAILURE_CODES
 
 EMITTING_MODULES = ("core", "schema", "lint", "hashes")
 
 
 def failure_code_literals(module_name: str) -> set[str]:
     """First positional string argument of every Failure(...) call in a module."""
-    source = Path(agentdesk.validator.__file__).parent / f"{module_name}.py"
+    source = Path(nexuusbot.validator.__file__).parent / f"{module_name}.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     literals = set()
     for node in ast.walk(tree):

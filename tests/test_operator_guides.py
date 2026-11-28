@@ -86,7 +86,7 @@ def test_the_distribution_guide_promises_only_what_the_build_makes():
     assert "AgentDesk.exe" in build and "dist/agent-desk" in build, (
         "the build script no longer makes the names the guide instructs about"
     )
-    update = _text(ROOT / "src" / "agentdesk" / "update" / "__init__.py")
+    update = _text(ROOT / "src" / "nexuusbot" / "update" / "__init__.py")
     assert '"AgentDesk.exe"' in update and '"agentdesk.exe"' in update, (
         "the executable pair behind the update procedure is gone"
     )
@@ -116,7 +116,7 @@ def test_the_marketplace_backup_names_the_runtime_root():
     assert "%LOCALAPPDATA%" not in backup_line, (
         "the backup instruction names the install folder, not the data root"
     )
-    app = _text(ROOT / "src" / "agentdesk" / "server" / "app.py")
+    app = _text(ROOT / "src" / "nexuusbot" / "server" / "app.py")
     assert 'Path(Path.home(), ".agent-desk")' in app, (
         "the guide's default data root is not the code's default"
     )

@@ -21,19 +21,19 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.calendar import watcher as calendar_watcher
-from agentdesk.calendar.watcher import Adapters as CalendarAdapters
-from agentdesk.calendar.watcher import CalendarBridge
-from agentdesk.capabilities import CapabilitiesCache, default_gate_runners
-from agentdesk.excel import core as excel_core
-from agentdesk.excel.watcher import Adapters as ExcelAdapters
-from agentdesk.excel.watcher import ExcelWatch
-from agentdesk.excel.xlsx import parse_workbook_bytes
-from agentdesk.capabilities import GATES
-from agentdesk.probe.core import FAIL, GATE_KEYS, PASS, UNKNOWN, GateResult
-from agentdesk.server import capabilities_view
-from agentdesk.server.core import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.calendar import watcher as calendar_watcher
+from nexuusbot.calendar.watcher import Adapters as CalendarAdapters
+from nexuusbot.calendar.watcher import CalendarBridge
+from nexuusbot.capabilities import CapabilitiesCache, default_gate_runners
+from nexuusbot.excel import core as excel_core
+from nexuusbot.excel.watcher import Adapters as ExcelAdapters
+from nexuusbot.excel.watcher import ExcelWatch
+from nexuusbot.excel.xlsx import parse_workbook_bytes
+from nexuusbot.capabilities import GATES
+from nexuusbot.probe.core import FAIL, GATE_KEYS, PASS, UNKNOWN, GateResult
+from nexuusbot.server import capabilities_view
+from nexuusbot.server.core import (
     SRC_CALENDAR,
     SRC_EXCEL,
     SRC_RESEARCH,
@@ -496,7 +496,7 @@ def test_a_fresh_boot_cache_has_no_gate_results(env):
 
 def test_the_probe_cli_still_stands_untouched():
     # The CLI stays the IT surface; this page never replaces or edits it.
-    from agentdesk.probe import cli
+    from nexuusbot.probe import cli
 
     assert callable(cli.main)
     assert callable(cli.run_all_gates)

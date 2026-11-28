@@ -1192,31 +1192,31 @@ class _WalkRecorder:
 
 
 def _install_fake_desk(monkeypatch, recorder):
-    """Replace every agentdesk import used by a boot with in-memory stand-ins."""
-    agentdesk = types.ModuleType("agentdesk")
-    agentdesk.__path__ = []
-    server_package = types.ModuleType("agentdesk.server")
+    """Replace every nexuusbot import the boot uses with in-memory stand-ins."""
+    host = types.ModuleType("nexuusbot")
+    host.__path__ = []
+    server_package = types.ModuleType("nexuusbot.server")
     server_package.__path__ = []
-    server_app = types.ModuleType("agentdesk.server.app")
+    server_app = types.ModuleType("nexuusbot.server.app")
     server_app.create_server = recorder.create_server
     server_package.app = server_app
-    keys_package = types.ModuleType("agentdesk.keys")
+    keys_package = types.ModuleType("nexuusbot.keys")
     keys_package.__path__ = []
-    secrets = types.ModuleType("agentdesk.keys.secrets")
+    secrets = types.ModuleType("nexuusbot.keys.secrets")
 
     class KeychainSecrets:
         def __init__(self, backend):
             self.backend = backend
 
     secrets.KeychainSecrets = KeychainSecrets
-    probe_package = types.ModuleType("agentdesk.probe")
+    probe_package = types.ModuleType("nexuusbot.probe")
     probe_package.__path__ = []
-    core = types.ModuleType("agentdesk.probe.core")
+    core = types.ModuleType("nexuusbot.probe.core")
     core.GateResult = _GateResult
     core.UNKNOWN = "UNKNOWN"
     core.PASS = "PASS"
     core.FAIL = "FAIL"
-    capabilities = types.ModuleType("agentdesk.capabilities")
+    capabilities = types.ModuleType("nexuusbot.capabilities")
     capabilities.GATES = (
         ("exec-user-space", 1, "User-space execution"),
         ("uv-tls-bootstrap", 2, "uv bootstrap under corporate TLS"),
@@ -1225,7 +1225,7 @@ def _install_fake_desk(monkeypatch, recorder):
         ("edr-identity", 5, "EDR / AV identity"),
         ("embeddings", 6, "Endpoint embeddings"),
     )
-    for module in (agentdesk, server_package, server_app, keys_package, secrets,
+    for module in (host, server_package, server_app, keys_package, secrets,
                    probe_package, core, capabilities):
         monkeypatch.setitem(sys.modules, module.__name__, module)
 
@@ -1421,7 +1421,7 @@ def test_every_walk_entry_point_injects_inert_gate_runners(monkeypatch, tmp_path
         runners = recorder.create_calls[0].get("gate_runners")
         assert runners is not None, f"{entry} boot omitted gate_runners"
         assert set(runners) == {key for key, _number, _title in
-                                sys.modules["agentdesk.capabilities"].GATES}
+                                sys.modules["nexuusbot.capabilities"].GATES}
         assert {runner().status for runner in runners.values()} == {"UNKNOWN"}
         if entry != "feedback":
             assert (recorder.guard_events.index("page-route")
@@ -1443,4 +1443,4 @@ def test_busy_seeding_never_sends_a_capability_request(monkeypatch, tmp_path):
                            if method != "GET" and "/capabilities/" in url]
     assert capability_requests == []
     assert {result.key for result in recorder.cached} == {
-        key for key, _number, _title in sys.modules["agentdesk.capabilities"].GATES}
+        key for key, _number, _title in sys.modules["nexuusbot.capabilities"].GATES}

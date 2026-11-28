@@ -15,7 +15,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.mail.store import MailStore, ensure_schema
+from nexuusbot.mail.store import MailStore, ensure_schema
 
 
 def test_new_store_has_no_handled_threads(tmp_path):

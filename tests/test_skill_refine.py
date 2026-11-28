@@ -25,10 +25,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 sys.path.insert(0, str(ROOT / "tools"))
 
 import server_harness
-from agentdesk.agentloop.loop import LoopContext
-from agentdesk.assistant import audit as audit_store
-from agentdesk.repetition import refine
-from agentdesk.repetition.skills import SkillError, SkillStore
+from nexuusbot.agentloop.loop import LoopContext
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.repetition import refine
+from nexuusbot.repetition.skills import SkillError, SkillStore
 from mock_endpoint import MockEndpointHandler
 
 NOW_TS = 1762857600.0
@@ -105,7 +105,7 @@ class _MockEndpoint:
 def test_the_mock_endpoint_answers_a_refine_prompt():
     mock = _MockEndpoint()
     try:
-        from agentdesk.llm import chat_client
+        from nexuusbot.llm import chat_client
 
         client = chat_client(mock.base, "", "any")
         skill = {"name": "s", "prompt": "the current prompt"}
@@ -235,6 +235,6 @@ def test_refine_refuses_a_prompt_over_the_cap():
 
 
 def server_app_skills_step(ctx):
-    from agentdesk.server.app import skills_step_run
+    from nexuusbot.server.app import skills_step_run
 
     return skills_step_run(ctx)

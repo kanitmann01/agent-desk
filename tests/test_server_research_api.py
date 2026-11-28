@@ -21,7 +21,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.llm import chat
+from nexuusbot.llm import chat
 
 
 class StubEndpoint:
@@ -117,8 +117,8 @@ def test_research_requires_a_question(env, auth):
 
 
 def test_assistant_uses_widget_context_without_restating_it(env, auth, stub, tmp_path):
-    from agentdesk.excel.watcher import Adapters, ExcelWatch
-    from agentdesk.excel.xlsx import parse_workbook_bytes
+    from nexuusbot.excel.watcher import Adapters, ExcelWatch
+    from nexuusbot.excel.xlsx import parse_workbook_bytes
     from excel_fixtures import base_workbook
 
     workbook = tmp_path / "Q4-sales.xlsx"
@@ -168,7 +168,7 @@ def test_assistant_thread_persists_across_page_loads(env, auth, stub):
 
 
 def test_endpoint_down_degrades_alone(env, auth):
-    from agentdesk.llm import chat as real_chat
+    from nexuusbot.llm import chat as real_chat
 
     dead_base = "http://127.0.0.1:9"  # closed port
     env.server.llm = lambda prompt: real_chat(dead_base, "k", "m", prompt)
@@ -206,7 +206,7 @@ def test_every_outbound_call_is_audited_without_file_contents(env, auth, stub):
 
 
 def test_failed_calls_are_audited_as_errors(env, auth):
-    from agentdesk.llm import chat as real_chat
+    from nexuusbot.llm import chat as real_chat
 
     env.server.llm = lambda prompt: real_chat("http://127.0.0.1:9", "k", "m", prompt)
     env.post_json("/research", {"question": "q"}, auth)
@@ -250,7 +250,7 @@ def test_research_answers_are_stored_for_plugin_cards(env, auth):
 
 
 def test_failed_research_answers_are_not_stored(env, auth):
-    from agentdesk.llm import chat as real_chat
+    from nexuusbot.llm import chat as real_chat
 
     env.server.llm = lambda prompt: real_chat("http://127.0.0.1:9", "k", "m", prompt)
     env.post_json("/research", {"question": "q"}, auth)

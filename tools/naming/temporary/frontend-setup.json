@@ -2,18 +2,6 @@
   "family": "frontend-setup",
   "ticket": "05",
   "issue": 359,
-  "note": "Ticket 05 (issue 359) clears this family and edits only this file. The frontend package name and lockfile identity are ticket 09's and stay unchanged here.",
-  "entries": [
-    {
-      "surface": "Frontend README intro sentence",
-      "files": ["frontend/README.md"],
-      "issue": 359
-    },
-    {
-      "surface": "Frontend package description sentence",
-      "files": ["frontend/package.json"],
-      "issue": 359,
-      "matches": ["agent desk"]
-    }
-  ]
+  "note": "Ticket 05 (issue 359) renamed the frontend setup copy and ticket 08 (issue 362) emptied this file completely: the two entries pinned here since ticket 07 covered surfaces that had already been renamed (the frontend README intro sentence and the frontend package description sentence), and the README one's whole-file coverage existed only to tolerate the three src/agentdesk package-path references in frontend/README.md, which are the package move's to own. Ticket 08 moved those references to src/nexuusbot and added frontend/README.md to the python-package family's coverage before clearing it, answering the structural question recorded on issue 361.",
+  "entries": []
 }

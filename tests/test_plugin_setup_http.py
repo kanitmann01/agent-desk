@@ -23,7 +23,7 @@ def _booted_excel_report(tmp_path, pick=None, extra_plugins=()):
     answers what the dialog would answer - a path, None, or a ConfigError.
     The default opens the fixture workbook. Yields (server, book).
     """
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -61,7 +61,7 @@ def booted(tmp_path):
 
 
 def _refuse_to_open(_book):
-    from agentdesk.plugins.config import ConfigError
+    from nexuusbot.plugins.config import ConfigError
 
     raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE)
 

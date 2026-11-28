@@ -19,8 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from agentdesk.registry.index import load_index  # noqa: E402
-from agentdesk.registry.install import tree_digest  # noqa: E402
+from nexuusbot.registry.index import load_index  # noqa: E402
+from nexuusbot.registry.install import tree_digest  # noqa: E402
 
 
 def _manifest(plugin_dir: Path) -> dict:

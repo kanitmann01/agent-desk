@@ -103,7 +103,7 @@ for _path in (str(ROOT / "src"), str(ROOT / "tools")):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from agentdesk.engine import DEFAULT_TURN_TIMEOUT_S
+from nexuusbot.engine import DEFAULT_TURN_TIMEOUT_S
 from layout_audit import _inert_gate_runners
 
 MOCK_KEY = "sk-ready-0001"
@@ -204,8 +204,8 @@ class Desk:
         client carries one cookie jar: an opener that follows redirects the
         way a browser does, and one that stops at the first.
         """
-        from agentdesk.keys.secrets import KeychainSecrets
-        from agentdesk.server import app as server_app
+        from nexuusbot.keys.secrets import KeychainSecrets
+        from nexuusbot.server import app as server_app
 
         os.environ["AGENTDESK_DATA"] = str(data_dir)
         self.server = server_app.create_server(
@@ -829,7 +829,7 @@ def _wait_for_loop_idle(desk: Desk, seconds: float = 60.0) -> bool:
 
 def _sidecar_installed() -> bool:
     """Whether this walk's desk can run the real side-car right now."""
-    from agentdesk.engine import available
+    from nexuusbot.engine import available
 
     try:
         return bool(available())
@@ -849,7 +849,7 @@ def _connect_step_present() -> bool:
     not.
     """
     try:
-        from agentdesk.insight import insight_connect  # noqa: F401
+        from nexuusbot.insight import insight_connect  # noqa: F401
     except Exception:  # noqa: BLE001 - the sibling slice is not in this build
         return False
     return True
@@ -1084,7 +1084,7 @@ def _open_sample_tracker(desk: Desk) -> tuple[bool, str]:
     copy through the plugin's upload route, then confirm the tracker's
     columns. A failure names the step rather than raising into the walk.
     """
-    from agentdesk.server import demo_data
+    from nexuusbot.server import demo_data
 
     plugins = getattr(desk.server, "plugins", None)
     if plugins is None:

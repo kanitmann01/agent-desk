@@ -22,13 +22,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import agentdesk  # noqa: E402
-import agentdesk.validator  # noqa: E402,F401
-from agentdesk.server import pages  # noqa: E402
-from agentdesk.server import commitments  # noqa: E402
-from agentdesk.server import memory_view  # noqa: E402
-from agentdesk.server import settings_view  # noqa: E402
-from agentdesk.server import wizard_view  # noqa: E402
+import nexuusbot  # noqa: E402
+import nexuusbot.validator  # noqa: E402,F401
+from nexuusbot.server import pages  # noqa: E402
+from nexuusbot.server import commitments  # noqa: E402
+from nexuusbot.server import memory_view  # noqa: E402
+from nexuusbot.server import settings_view  # noqa: E402
+from nexuusbot.server import wizard_view  # noqa: E402
 
 # The approved literals, from the contract the guard owns: the test
 # reads them here so the expectations come from the spec, not from the
@@ -50,8 +50,8 @@ def _assert_old_name_absent(html_out: str, where: str) -> None:
 
 def test_the_server_reads_one_approved_constant():
     """One server constant carries the name, equal to the contract's."""
-    assert agentdesk.PRODUCT_NAME == APPROVED_NAME
-    assert agentdesk.PRODUCT_INITIALS == APPROVED_INITIALS
+    assert nexuusbot.PRODUCT_NAME == APPROVED_NAME
+    assert nexuusbot.PRODUCT_INITIALS == APPROVED_INITIALS
 
 
 def test_the_shell_wordmark_breadcrumb_and_title_render_the_name():
@@ -133,43 +133,43 @@ def test_the_wizard_page_title_and_breadcrumb_name_the_product():
 
 
 def test_the_startup_banner_reads_from_the_constant():
-    from agentdesk.server.app import START_BANNER
+    from nexuusbot.server.app import START_BANNER
     url = "http://127.0.0.1:8765/one-time-start"
     assert START_BANNER.format(url=url) == f"{APPROVED_NAME} is running: {url}"
 
 
 def test_the_authentication_recovery_sentence_reads_from_the_constant():
-    from agentdesk.server.app import SESSION_RECOVERY
+    from nexuusbot.server.app import SESSION_RECOVERY
     assert SESSION_RECOVERY == (
         f"Open {APPROVED_NAME} from its shortcut to get a fresh link.")
 
 
 def test_the_update_banner_names_the_product():
-    from agentdesk.update import READY
+    from nexuusbot.update import READY
     assert READY.format(version="0.1.1") == (
         "Version 0.1.1 is ready. Restart "
         f"{APPROVED_NAME} from its shortcut to switch.")
 
 
 def test_the_update_health_message_names_the_product():
-    from agentdesk.update import NO_PROGRAM_IN_STAGE
+    from nexuusbot.update import NO_PROGRAM_IN_STAGE
     assert NO_PROGRAM_IN_STAGE == (
         f"The update has no {APPROVED_NAME} program in it.")
 
 
 def test_the_server_cli_description_names_the_product():
-    from agentdesk.server.cli import build_parser
+    from nexuusbot.server.cli import build_parser
     assert build_parser().description == (
         f"Start the {APPROVED_NAME} dashboard (127.0.0.1 only).")
 
 
 def test_the_macos_notification_sentence_names_the_product():
-    from agentdesk.feeder.collectors.mac_notifications import \
+    from nexuusbot.feeder.collectors.mac_notifications import \
         FULL_DISK_ACCESS_CAUSE
     assert f"Give {APPROVED_NAME} Full Disk Access" in FULL_DISK_ACCESS_CAUSE
 
 
 def test_the_module_docstrings_name_the_product():
-    assert agentdesk.__doc__.startswith(f"{APPROVED_NAME}:")
-    assert agentdesk.validator.__doc__.startswith(
+    assert nexuusbot.__doc__.startswith(f"{APPROVED_NAME}:")
+    assert nexuusbot.validator.__doc__.startswith(
         f"{APPROVED_NAME} plugin validator")

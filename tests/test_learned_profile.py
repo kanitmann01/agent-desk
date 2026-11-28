@@ -21,11 +21,11 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.insight import context as insight_context
-from agentdesk.insight import digest
-from agentdesk.insight.preferences import MAX_TOPICS, MAX_TOPIC_CHARS
-from agentdesk.memory import profile
-from agentdesk.recommend import rank
+from nexuusbot.insight import context as insight_context
+from nexuusbot.insight import digest
+from nexuusbot.insight.preferences import MAX_TOPICS, MAX_TOPIC_CHARS
+from nexuusbot.memory import profile
+from nexuusbot.recommend import rank
 
 NOW = 1763650000.0
 
@@ -34,8 +34,8 @@ def test_the_topic_limits_match_the_stated_store():
     # The constants are duplicated (insight/__init__ imports this
     # module's readers, so memory importing back would close a circle);
     # the pin keeps them from drifting, like the embeddings model pair.
-    from agentdesk.insight import preferences as stated_preferences
-    from agentdesk.memory import profile as learned
+    from nexuusbot.insight import preferences as stated_preferences
+    from nexuusbot.memory import profile as learned
 
     assert learned.MAX_TOPICS == stated_preferences.MAX_TOPICS
     assert learned.MAX_TOPIC_CHARS == stated_preferences.MAX_TOPIC_CHARS

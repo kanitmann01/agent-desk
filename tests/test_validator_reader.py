@@ -5,8 +5,8 @@ import zipfile
 import pytest
 
 from .test_validator_support import fixture, run_cli, write_plugin
-from agentdesk.validator import ValidatorIOError
-from agentdesk.validator.reader import DirectoryReader, ZipReader
+from nexuusbot.validator import ValidatorIOError
+from nexuusbot.validator.reader import DirectoryReader, ZipReader
 
 
 def make_zip(dest, source_dir):

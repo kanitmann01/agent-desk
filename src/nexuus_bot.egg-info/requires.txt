@@ -1,0 +1,6 @@
+cryptography>=44
+keyring>=25
+
+[dev]
+pytest
+pytest-xdist>=3.8

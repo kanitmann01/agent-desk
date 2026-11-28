@@ -21,7 +21,7 @@ REGISTRY = ROOT / "registry" / "plugins"
 
 @pytest.fixture
 def booted(tmp_path):
-    from agentdesk.plugins.runtime import PluginRuntime
+    from nexuusbot.plugins.runtime import PluginRuntime
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -12,7 +12,7 @@ already use.
 import sqlite3
 import threading
 
-from agentdesk.settings import SettingsStore
+from nexuusbot.settings import SettingsStore
 
 
 def _store(tmp_path) -> SettingsStore:

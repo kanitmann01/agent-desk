@@ -21,9 +21,9 @@ import json
 import pytest
 
 import server_harness
-from agentdesk.insight import digest, press
-from agentdesk.server import app as server_app
-from agentdesk.insight.types import InsightContext
+from nexuusbot.insight import digest, press
+from nexuusbot.server import app as server_app
+from nexuusbot.insight.types import InsightContext
 
 NOW = 1_760_000_000.0
 
@@ -290,7 +290,7 @@ def test_a_failed_or_empty_answer_falls_back_to_the_template(answer):
 
 
 def test_press_refuses_to_dress_a_skeleton_as_a_draft():
-    from agentdesk.insight.types import InsightError
+    from nexuusbot.insight.types import InsightError
 
     with pytest.raises(InsightError) as caught:
         press.draft_reply(
@@ -336,7 +336,7 @@ def test_press_passes_a_model_answer_through_unchanged():
 
 
 def test_press_refuses_a_request_without_a_thread():
-    from agentdesk.insight.types import InsightError
+    from nexuusbot.insight.types import InsightError
 
     with pytest.raises(InsightError) as caught:
         press.draft_reply(None, {"kind": "reply-draft", "thread": {}}, preferences={})

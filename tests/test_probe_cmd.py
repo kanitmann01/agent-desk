@@ -24,7 +24,7 @@ def test_probe_cmd_exists():
 
 def test_probe_cmd_runs_the_module_with_passthrough_args():
     text = cmd_text()
-    assert "python -m agentdesk.probe" in text
+    assert "python -m nexuusbot.probe" in text
     assert "%*" in text
 
 

@@ -29,16 +29,16 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.assistant import audit as audit_store
-from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.crypto import load_key
-from agentdesk.memory.reflect import (
+from nexuusbot.assistant import audit as audit_store
+from nexuusbot.llm import LlmUnavailable
+from nexuusbot.memory.crypto import load_key
+from nexuusbot.memory.reflect import (
     REFLECT_SYSTEM_PROMPT,
     ObservationDraft,
     ReflectFailed,
     ReflectorUnavailable,
 )
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.memory.store import MemoryStore
 
 KEY = load_key(bytes(range(32)))
 

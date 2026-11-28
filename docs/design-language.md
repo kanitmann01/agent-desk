@@ -7,7 +7,7 @@ together:
 
 - `frontend/src/index.css`: the SPA stylesheet, one semantic token set per
   theme. No component carries a hex.
-- `src/agentdesk/server/pages.py` (`STYLES`): the server-rendered
+- `src/nexuusbot/server/pages.py` (`STYLES`): the server-rendered
   fallback's own statement of the same system (the same palette, radii and
   rules under the coarser bg/surface/ink names), so the no-JavaScript
   pages speak the same language. The token suite reads it out of the

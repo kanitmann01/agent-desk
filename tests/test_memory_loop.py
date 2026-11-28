@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from agentdesk.inbox.store import InboxStore
-from agentdesk.memory import loop
-from agentdesk.memory.extract import CandidateFact, ExtractorUnavailable
-from agentdesk.memory.store import MemoryStore
+from nexuusbot.inbox.store import InboxStore
+from nexuusbot.memory import loop
+from nexuusbot.memory.extract import CandidateFact, ExtractorUnavailable
+from nexuusbot.memory.store import MemoryStore
 
 
 class Clock:
@@ -152,7 +152,7 @@ def test_capture_skips_what_is_stored_or_waiting_and_respects_channel_switches()
 
 
 def test_capture_settings_read_the_settings_store():
-    from agentdesk.settings import SettingsStore
+    from nexuusbot.settings import SettingsStore
     settings = SettingsStore(sqlite3.connect(":memory:"))
     read = loop.capture_settings(settings)
     assert read.enabled is True

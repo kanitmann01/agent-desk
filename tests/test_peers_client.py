@@ -18,7 +18,7 @@ for _p in (str(ROOT / "src"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.peers.client import PeerClient, PeerClientError  # noqa: E402
+from nexuusbot.peers.client import PeerClient, PeerClientError  # noqa: E402
 
 
 class _StubHandler(BaseHTTPRequestHandler):
@@ -148,7 +148,7 @@ def test_extract_bundle_round_trips_files(tmp_path):
     import io
     import zipfile
 
-    from agentdesk.peers.client import extract_bundle
+    from nexuusbot.peers.client import extract_bundle
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -165,7 +165,7 @@ def test_extract_bundle_refuses_entries_that_escape(tmp_path):
     import io
     import zipfile
 
-    from agentdesk.peers.client import extract_bundle
+    from nexuusbot.peers.client import extract_bundle
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
